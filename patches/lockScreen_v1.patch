@@ -1,0 +1,1762 @@
+diff --git a/modules/lock/Center.qml b/modules/lock/Center.qml
+deleted file mode 100644
+index b0cd6500..00000000
+--- a/modules/lock/Center.qml
++++ /dev/null
+@@ -1,53 +0,0 @@
+-import QtQuick
+-import QtQuick.Layouts
+-import Caelestia.Config
+-import qs.components
+-import qs.services
+-import qs.modules.lock.center
+-
+-ColumnLayout {
+-    id: root
+-
+-    required property var lock
+-    readonly property real centerScale: Math.min(1, (lock.screen?.height ?? 1440) / 1440)
+-    readonly property int centerWidth: Tokens.sizes.lock.centerWidth * centerScale
+-
+-    Layout.preferredWidth: centerWidth
+-    Layout.fillWidth: false
+-    Layout.fillHeight: true
+-
+-    spacing: Tokens.spacing.largeIncreased
+-
+-    Clock {
+-        Layout.alignment: Qt.AlignHCenter
+-        Layout.topMargin: Tokens.padding.large
+-        centerScale: root.centerScale
+-    }
+-
+-    StyledText {
+-        Layout.alignment: Qt.AlignHCenter
+-
+-        text: Time.format("dddd • d MMM").toUpperCase()
+-        color: Colours.palette.m3onSurface
+-        font: Tokens.font.title.builders.medium.weight(Font.DemiBold).build()
+-    }
+-
+-    ProfilePic {
+-        Layout.alignment: Qt.AlignHCenter
+-        Layout.topMargin: Tokens.spacing.extraExtraLarge * root.centerScale
+-        Layout.bottomMargin: Tokens.spacing.extraLarge * root.centerScale
+-        centerWidth: root.centerWidth
+-    }
+-
+-    PasswordInput {
+-        Layout.alignment: Qt.AlignHCenter
+-        centerScale: Math.max(0.8, root.centerScale)
+-        centerWidth: root.centerWidth
+-        lock: root.lock
+-    }
+-
+-    StateMessage {
+-        Layout.fillWidth: true
+-        pam: root.lock.pam
+-    }
+-}
+diff --git a/modules/lock/Content.qml b/modules/lock/Content.qml
+index 0d47502a..47b6888d 100644
+--- a/modules/lock/Content.qml
++++ b/modules/lock/Content.qml
+@@ -1,60 +1,102 @@
++pragma ComponentBehavior: Bound
++
+ import QtQuick
+ import QtQuick.Layouts
++import Caelestia
+ import Caelestia.Config
+ import qs.components
+ import qs.services
++import qs.modules.lock.weather
+ 
+-RowLayout {
++Item {
+     id: root
+ 
+     required property var lock
+ 
+-    spacing: Tokens.spacing.largeIncreased * 2
++    // 0 = fully off screen, 1 = in place. Driven by the lock surface's animations
++    property real reveal: 1
+ 
+-    ColumnLayout {
+-        Layout.fillWidth: true
+-        spacing: Tokens.spacing.medium
++    readonly property bool portrait: height > width
++    readonly property int margin: Math.round(CUtils.clamp(height * 0.045, Tokens.padding.extraLarge, Tokens.padding.extraExtraLarge * 1.5))
++    readonly property real slide: (1 - reveal) * Tokens.padding.extraExtraLarge * 2
++
++    // Scale of the clock and login row, ~1 on a 1080p landscape screen
++    readonly property real heroScale: Math.min(leftPane.height / 1000, leftPane.width / 640)
++
++    Item {
++        id: leftPane
++
++        anchors.left: parent.left
++        anchors.top: parent.top
++        anchors.margins: root.margin
++        anchors.leftMargin: root.margin - root.slide
++
++        width: parent.width - root.margin * 2 - (root.portrait ? 0 : rail.width + root.margin)
++        height: root.portrait ? Math.round((parent.height - root.margin * 3) * 0.6) : parent.height - root.margin * 2
+ 
+         WeatherInfo {
+-            Layout.fillWidth: true
+-            rootHeight: root.height
++            anchors.left: parent.left
++            anchors.top: parent.top
++            width: Math.min(parent.width, implicitWidth)
+         }
+ 
+-        Fetch {
+-            Layout.fillWidth: true
+-            rootHeight: root.height
+-        }
++        Hero {
++            anchors.left: parent.left
++            anchors.bottom: parent.bottom
++            width: Math.min(parent.width, Tokens.sizes.lock.centerWidth)
+ 
+-        Media {
+-            Layout.fillWidth: true
+-            Layout.fillHeight: true
+             lock: root.lock
++            heroScale: root.heroScale
+         }
+     }
+ 
+-    Center {
+-        lock: root.lock
+-    }
+-
+     ColumnLayout {
+-        Layout.fillWidth: true
++        id: rail
++
++        anchors.right: parent.right
++        anchors.bottom: parent.bottom
++        anchors.margins: root.margin
++        anchors.rightMargin: root.margin - root.slide
++
++        width: root.portrait ? parent.width - root.margin * 2 : Math.min(Tokens.sizes.sidebar.width, Math.round(parent.width * 0.32))
++        height: parent.height - root.margin * 2 - (root.portrait ? leftPane.height + root.margin : 0)
++
+         spacing: Tokens.spacing.medium
+ 
+-        Resources {
++        Forecast {
+             Layout.fillWidth: true
++
++            // Only when the rest of the rail keeps enough height for itself
++            visible: rail.height - implicitHeight - rail.spacing >= Tokens.sizes.lock.showForecastHeight
+         }
+ 
+         StyledRect {
+             Layout.fillWidth: true
+             Layout.fillHeight: true
+ 
+-            bottomRightRadius: Tokens.rounding.extraLarge
+-            radius: Tokens.rounding.medium
++            radius: Tokens.rounding.extraLarge
+             color: Colours.tPalette.m3surfaceContainer
+ 
+             NotifDock {
+                 lock: root.lock
+             }
+         }
++
++        Media {
++            Layout.fillWidth: true
++            visible: Players.active !== null
++        }
++
++        Fetch {
++            Layout.fillWidth: true
++
++            // Leave the room to the notifications on short screens
++            compact: fullHeight > rail.height / 3
++        }
++
++        SessionControls {
++            Layout.fillWidth: true
++            visible: GlobalConfig.lock.enableSessionControls
++        }
+     }
+ }
+diff --git a/modules/lock/Fetch.qml b/modules/lock/Fetch.qml
+index e817527a..d6a6a757 100644
+--- a/modules/lock/Fetch.qml
++++ b/modules/lock/Fetch.qml
+@@ -3,10 +3,11 @@ pragma ComponentBehavior: Bound
+ import QtQuick
+ import QtQuick.Layouts
+ import Quickshell.Services.UPower
+-import Caelestia
+ import Caelestia.Config
+ import Caelestia.I18n
++import Caelestia.Services
+ import qs.components
++import qs.components.controls
+ import qs.components.effects
+ import qs.services
+ import qs.utils
+@@ -14,26 +15,41 @@ import qs.utils
+ StyledRect {
+     id: root
+ 
+-    required property real rootHeight
+-    readonly property int cBoxSize: Tokens.font.body.medium.pointSize * 2
++    // Drops the logo and info lines, leaving only the meters
++    property bool compact
+ 
+-    implicitHeight: layout.implicitHeight + layout.anchors.topMargin + layout.anchors.margins
+-    radius: Tokens.rounding.medium
++    readonly property real detailWidth: Math.max(cpuMeter.detailWidth, memMeter.detailWidth, diskMeter.detailWidth)
++    // Height when not compact. Summed by hand so it doesn't depend on compact itself
++    readonly property real fullHeight: header.implicitHeight + info.implicitHeight + meters.implicitHeight + meters.Layout.topMargin + layout.spacing * 2 + layout.anchors.margins * 2
++
++    implicitHeight: layout.implicitHeight + layout.anchors.margins * 2
++    radius: Tokens.rounding.extraLarge
+     color: Colours.tPalette.m3surfaceContainer
+ 
++    ServiceRef {
++        service: Cpu
++    }
++
++    ServiceRef {
++        service: Memory
++    }
++
++    ServiceRef {
++        service: Storage
++    }
++
+     ColumnLayout {
+         id: layout
+ 
+         anchors.fill: parent
+-        anchors.margins: Tokens.padding.extraLarge
+-        anchors.topMargin: Tokens.padding.extraLarge
+-        anchors.bottomMargin: Tokens.padding.extraLarge
++        anchors.margins: Tokens.padding.largeIncreased
+ 
+-        spacing: Tokens.spacing.small
++        spacing: Tokens.spacing.medium
+ 
+         RowLayout {
++            id: header
++
+             Layout.fillWidth: true
+-            Layout.fillHeight: false
+             spacing: Tokens.spacing.medium
+ 
+             StyledRect {
+@@ -57,59 +73,48 @@ StyledRect {
+                 text: "caelestiafetch.sh"
+                 elide: Text.ElideRight
+             }
+-
+-            WrappedLoader {
+-                Layout.fillHeight: true
+-                Layout.preferredWidth: height
+-                Layout.preferredHeight: 0
+-                active: !iconLoader.active
+-
+-                sourceComponent: SysInfo.isDefaultLogo ? caelestiaLogo : distroIcon
+-            }
+         }
+ 
+         RowLayout {
++            id: info
++
++            // Collapsed instead of hidden so its implicit height stays known for fullHeight
+             Layout.fillWidth: true
+-            Layout.fillHeight: true
++            Layout.preferredHeight: root.compact ? 0 : implicitHeight
++            Layout.topMargin: root.compact ? -layout.spacing : 0
+             spacing: Tokens.spacing.extraLarge
++            opacity: root.compact ? 0 : 1
+ 
+-            WrappedLoader {
+-                id: iconLoader
+-
++            Loader {
+                 Layout.fillHeight: true
++                Layout.leftMargin: Tokens.padding.small
++                Layout.preferredWidth: height
++
+                 active: root.width > Tokens.sizes.lock.largeLogoWidth
++                visible: active
++                asynchronous: true
+ 
+                 sourceComponent: SysInfo.isDefaultLogo ? caelestiaLogo : distroIcon
+             }
+ 
+             ColumnLayout {
+                 Layout.fillWidth: true
+-                Layout.topMargin: Tokens.padding.medium
+-                Layout.bottomMargin: iconLoader.active || colourRowLoader.active ? Tokens.padding.medium : 0
+-                spacing: Tokens.spacing.medium
++                Layout.topMargin: Tokens.padding.extraSmall
++                Layout.bottomMargin: Tokens.padding.extraSmall
++                spacing: Tokens.spacing.small
+ 
+                 Repeater {
+                     model: {
+                         const items = [];
+-                        const hasBatt = UPower.displayDevice.isLaptopBattery;
+-                        const rHeight = root.rootHeight;
+-
+-                        if (!hasBatt && rHeight > Tokens.sizes.lock.fetch4LinesHeight)
+-                            // TRANSLATORS: keep the label padded to 4 chars so the column stays aligned
+-                            items.push(Tr.tr("OS  : %1").arg(SysInfo.osPrettyName || SysInfo.osName));
+-
+-                        if (rHeight > (hasBatt ? Tokens.sizes.lock.fetch4LinesHeight : Tokens.sizes.lock.fetch3LinesHeight))
+-                            // TRANSLATORS: keep the label padded to 4 chars so the column stays aligned
+-                            items.push(Tr.tr("WM  : %1").arg(SysInfo.wm));
+-
+-                        if (!hasBatt || rHeight > Tokens.sizes.lock.fetch3LinesHeight)
+-                            // TRANSLATORS: keep the label padded to 4 chars so the column stays aligned
+-                            items.push(Tr.tr("USER: %1").arg(SysInfo.user));
+ 
++                        // TRANSLATORS: keep the label padded to 4 chars so the column stays aligned
++                        items.push(Tr.tr("OS  : %1").arg(SysInfo.osPrettyName || SysInfo.osName));
++                        // TRANSLATORS: keep the label padded to 4 chars so the column stays aligned
++                        items.push(Tr.tr("WM  : %1").arg(SysInfo.wm));
+                         // TRANSLATORS: keep the label padded to 4 chars so the column stays aligned
+                         items.push(Tr.tr("UP  : %1").arg(SysInfo.uptime));
+ 
+-                        if (hasBatt) {
++                        if (UPower.displayDevice.isLaptopBattery) {
+                             const charging = [UPowerDeviceState.Charging, UPowerDeviceState.FullyCharged, UPowerDeviceState.PendingCharge].includes(UPower.displayDevice.state);
+                             const pct = Math.round(UPower.displayDevice.percentage * 100);
+                             // TRANSLATORS: keep the label padded to 4 chars, (+) marks charging
+@@ -130,30 +135,41 @@ StyledRect {
+             }
+         }
+ 
+-        WrappedLoader {
+-            id: colourRowLoader
++        ColumnLayout {
++            id: meters
+ 
+-            Layout.topMargin: iconLoader.active ? Tokens.spacing.small : 0
+-            Layout.alignment: Qt.AlignHCenter
+-            active: root.rootHeight > Tokens.sizes.lock.showColourBoxRowHeight
++            Layout.fillWidth: true
++            Layout.topMargin: Tokens.spacing.extraSmall
++            spacing: Tokens.spacing.small
+ 
+-            sourceComponent: RowLayout {
+-                id: coloursRow
++            Meter {
++                id: cpuMeter
+ 
+-                spacing: Tokens.spacing.largeIncreased
++                // TRANSLATORS: short label for CPU usage, at most 4 chars
++                label: Tr.tr("CPU")
++                value: Cpu.percentage
++                detail: `${Strings.percentOne(Cpu.percentage)} ${Units.formatSensorTemp(Cpu.temperature)}`
++                colour: Cpu.temperature > 90 ? Colours.palette.m3error : Colours.palette.m3primary
++            }
+ 
+-                Repeater {
+-                    model: CUtils.clamp(Math.floor((layout.width + coloursRow.spacing) / (root.cBoxSize + coloursRow.spacing)), 0, 8)
++            Meter {
++                id: memMeter
+ 
+-                    StyledRect {
+-                        required property int index
++                // TRANSLATORS: short label for memory usage, at most 4 chars
++                label: Tr.tr("MEM")
++                value: Memory.percentage
++                detail: Strings.percentOne(Memory.percentage)
++                colour: Colours.palette.m3tertiary
++            }
+ 
+-                        implicitWidth: implicitHeight
+-                        implicitHeight: root.cBoxSize
+-                        color: Colours.palette[`term${index}`]
+-                        radius: Tokens.rounding.medium
+-                    }
+-                }
++            Meter {
++                id: diskMeter
++
++                // TRANSLATORS: short label for storage usage, at most 4 chars
++                label: Tr.tr("DISK")
++                value: Storage.percentage
++                detail: Strings.percentOne(Storage.percentage)
++                colour: Colours.palette.m3secondary
+             }
+         }
+     }
+@@ -177,12 +193,43 @@ StyledRect {
+         }
+     }
+ 
+-    component WrappedLoader: Loader {
+-        asynchronous: true
+-        visible: active
+-    }
+-
+     component MonoText: StyledText {
+         font: root.width > Tokens.sizes.lock.largeFontWidth ? Tokens.font.mono.medium : Tokens.font.mono.small
+     }
++
++    component Meter: RowLayout {
++        id: meter
++
++        required property string label
++        required property real value
++        required property string detail
++        required property color colour
++        readonly property alias detailWidth: detailText.implicitWidth
++
++        Layout.fillWidth: true
++        spacing: Tokens.spacing.medium
++
++        MonoText {
++            text: meter.label.padEnd(4)
++            color: Colours.palette.m3onSurfaceVariant
++        }
++
++        StyledProgressBar {
++            Layout.fillWidth: true
++            implicitHeight: Tokens.padding.small
++
++            value: meter.value
++            fgColour: meter.colour
++            bgColour: Colours.layer(Colours.palette.m3surfaceContainerHighest, 2)
++        }
++
++        MonoText {
++            id: detailText
++
++            // Same width for every meter so the bars line up
++            Layout.preferredWidth: root.detailWidth
++            text: meter.detail
++            color: meter.colour
++        }
++    }
+ }
+diff --git a/modules/lock/Hero.qml b/modules/lock/Hero.qml
+new file mode 100644
+index 00000000..6a71be42
+--- /dev/null
++++ b/modules/lock/Hero.qml
+@@ -0,0 +1,77 @@
++import QtQuick
++import QtQuick.Layouts
++import Caelestia
++import Caelestia.Config
++import qs.components
++import qs.services
++import qs.modules.lock.center
++
++Item {
++    id: root
++
++    required property var lock
++    required property real heroScale
++
++    readonly property real authScale: CUtils.clamp(heroScale, 0.85, 1.2)
++
++    implicitWidth: layout.implicitWidth
++    implicitHeight: layout.implicitHeight + layout.anchors.bottomMargin
++
++    ColumnLayout {
++        id: layout
++
++        anchors.left: parent.left
++        anchors.right: parent.right
++        anchors.bottom: parent.bottom
++        // Reserve room for two lines of messages so the clock doesn't shift when they appear
++        anchors.bottomMargin: Math.ceil(messageMetrics.height * 2.4) + stateMessage.anchors.topMargin
++
++        spacing: 0
++
++        Clock {
++            heroScale: root.heroScale
++        }
++
++        StyledText {
++            Layout.topMargin: Math.round(Tokens.spacing.extraLarge * root.heroScale)
++
++            text: Time.format("dddd • d MMM").toUpperCase()
++            color: Colours.palette.m3onSurface
++            font: Tokens.font.title.builders.large.scale(root.authScale).weight(Font.DemiBold).build()
++        }
++
++        RowLayout {
++            Layout.topMargin: Math.round(Tokens.spacing.extraExtraLarge * root.heroScale)
++            spacing: Tokens.spacing.medium
++
++            ProfilePic {
++                size: passwordInput.implicitHeight
++            }
++
++            PasswordInput {
++                id: passwordInput
++
++                inputScale: root.authScale
++                maxWidth: Math.min(root.width - x, Tokens.sizes.lock.centerWidth * 0.7 * root.authScale)
++                lock: root.lock
++            }
++        }
++    }
++
++    FontMetrics {
++        id: messageMetrics
++
++        font: Tokens.font.body.small
++    }
++
++    StateMessage {
++        id: stateMessage
++
++        anchors.left: parent.left
++        anchors.right: parent.right
++        anchors.top: layout.bottom
++        anchors.topMargin: Tokens.spacing.medium
++
++        pam: root.lock.pam
++    }
++}
+diff --git a/modules/lock/LockSurface.qml b/modules/lock/LockSurface.qml
+index 782cb717..661ff92d 100644
+--- a/modules/lock/LockSurface.qml
++++ b/modules/lock/LockSurface.qml
+@@ -3,6 +3,7 @@ pragma ComponentBehavior: Bound
+ import QtQuick
+ import QtQuick.Effects
+ import Quickshell.Wayland
++import M3Shapes
+ import Caelestia.Config
+ import Caelestia.Multimedia
+ import Caelestia.State
+@@ -24,6 +25,7 @@ WlSessionLockSurface {
+ 
+     Connections {
+         function onUnlock(): void {
++            initAnim.stop();
+             unlockAnim.start();
+         }
+ 
+@@ -34,20 +36,12 @@ WlSessionLockSurface {
+         id: unlockAnim
+ 
+         ParallelAnimation {
+-            Anim {
+-                target: lockContent
+-                properties: "implicitWidth,implicitHeight"
+-                to: lockContent.size
+-            }
+-            Anim {
+-                target: lockBg
+-                property: "radius"
+-                to: lockContent.radius
+-            }
+             Anim {
+                 target: content
+-                property: "scale"
++                property: "reveal"
+                 to: 0
++                duration: Tokens.anim.durations.normal
++                easing: Tokens.anim.standardAccel
+             }
+             Anim {
+                 target: content
+@@ -56,10 +50,16 @@ WlSessionLockSurface {
+                 type: Anim.StandardSmall
+             }
+             Anim {
+-                target: lockIcon
++                target: badge
++                property: "scale"
++                to: 1
++                type: Anim.FastSpatial
++            }
++            Anim {
++                target: badge
+                 property: "opacity"
+                 to: 1
+-                type: Anim.StandardLarge
++                type: Anim.FastEffects
+             }
+             Anim {
+                 target: background
+@@ -69,13 +69,21 @@ WlSessionLockSurface {
+             }
+             SequentialAnimation {
+                 PauseAnimation {
+-                    duration: Tokens.anim.durations.small
++                    duration: Tokens.anim.durations.expressiveFastSpatial
+                 }
+-                Anim {
+-                    type: Anim.Standard
+-                    target: lockContent
+-                    property: "opacity"
+-                    to: 0
++                ParallelAnimation {
++                    Anim {
++                        target: badge
++                        property: "scale"
++                        to: 0
++                        type: Anim.StandardSmall
++                    }
++                    Anim {
++                        target: badge
++                        property: "opacity"
++                        to: 0
++                        type: Anim.StandardSmall
++                    }
+                 }
+             }
+         }
+@@ -100,13 +108,13 @@ WlSessionLockSurface {
+         SequentialAnimation {
+             ParallelAnimation {
+                 Anim {
+-                    target: lockContent
++                    target: badge
+                     property: "scale"
+                     to: 1
+                     type: Anim.FastSpatial
+                 }
+                 Anim {
+-                    target: lockContent
++                    target: badge
+                     property: "rotation"
+                     to: 360
+                     duration: Tokens.anim.durations.expressiveFastSpatial
+@@ -115,43 +123,28 @@ WlSessionLockSurface {
+             }
+             ParallelAnimation {
+                 Anim {
+-                    target: lockIcon
+-                    property: "rotation"
+-                    to: 360
+-                    easing: Tokens.anim.standardDecel
++                    target: badge
++                    property: "scale"
++                    to: 0
++                    type: Anim.Standard
+                 }
+                 Anim {
+-                    type: Anim.DefaultEffects
+-                    target: lockIcon
++                    target: badge
+                     property: "opacity"
+                     to: 0
++                    type: Anim.DefaultEffects
+                 }
+                 Anim {
+-                    type: Anim.DefaultEffects
+                     target: content
+                     property: "opacity"
+                     to: 1
++                    type: Anim.DefaultEffects
+                 }
+                 Anim {
+                     target: content
+-                    property: "scale"
++                    property: "reveal"
+                     to: 1
+                 }
+-                Anim {
+-                    target: lockBg
+-                    property: "radius"
+-                    to: lockContent.Tokens.rounding.extraLarge * 1.5
+-                }
+-                Anim {
+-                    target: lockContent
+-                    property: "implicitWidth"
+-                    to: (root.screen?.height ?? 0) * lockContent.Tokens.sizes.lock.heightMult * lockContent.Tokens.sizes.lock.ratio
+-                }
+-                Anim {
+-                    target: lockContent
+-                    property: "implicitHeight"
+-                    to: (root.screen?.height ?? 0) * lockContent.Tokens.sizes.lock.heightMult
+-                }
+             }
+         }
+     }
+@@ -162,18 +155,40 @@ WlSessionLockSurface {
+         anchors.fill: parent
+         opacity: 0
+ 
+-        layer.enabled: true
+-        layer.effect: MultiEffect {
+-            autoPaddingEnabled: false
+-            blurEnabled: true
+-            blur: 1
+-            blurMax: 64
+-            blurMultiplier: 1
++        Item {
++            anchors.fill: parent
++
++            layer.enabled: true
++            layer.effect: MultiEffect {
++                autoPaddingEnabled: false
++                blurEnabled: true
++                blur: 1
++                blurMax: 64
++                blurMultiplier: 1
++            }
++
++            Loader {
++                anchors.fill: parent
++                sourceComponent: Config.lock.useWallpaper ? wallpaperBackground : screencopyBackground
++            }
+         }
+ 
+-        Loader {
++        // Scrim so the content stays legible on any wallpaper, heavier behind the clock
++        Rectangle {
+             anchors.fill: parent
+-            sourceComponent: Config.lock.useWallpaper ? wallpaperBackground : screencopyBackground
++
++            gradient: Gradient {
++                orientation: Gradient.Horizontal
++
++                GradientStop {
++                    position: 0
++                    color: Qt.alpha(Colours.palette.m3surface, 0.8)
++                }
++                GradientStop {
++                    position: 1
++                    color: Qt.alpha(Colours.palette.m3surface, 0.5)
++                }
++            }
+         }
+     }
+ 
+@@ -194,27 +209,36 @@ WlSessionLockSurface {
+         }
+     }
+ 
+-    Item {
+-        id: lockContent
++    Content {
++        id: content
+ 
+-        readonly property int size: lockIcon.implicitHeight + Tokens.padding.large * 4
+-        readonly property int radius: size / 4 * Tokens.rounding.scale
++        anchors.fill: parent
++        visible: Config.lock.enabled
++
++        lock: root
++        opacity: 0
++        reveal: 0
++    }
++
++    // Shown while locking and unlocking, in place of the content
++    Item {
++        id: badge
+ 
+         anchors.centerIn: parent
+-        implicitWidth: size
+-        implicitHeight: size
++        implicitWidth: badgeShape.implicitSize
++        implicitHeight: badgeShape.implicitSize
+ 
+         visible: Config.lock.enabled
+         rotation: 180
+         scale: 0
+ 
+-        StyledRect {
+-            id: lockBg
++        MaterialShape {
++            id: badgeShape
+ 
+-            anchors.fill: parent
+-            color: Colours.palette.m3surface
+-            radius: parent.radius
+-            opacity: Colours.transparency.enabled ? Colours.transparency.base : 1
++            anchors.centerIn: parent
++            implicitSize: lockIcon.implicitHeight + Tokens.padding.extraLarge * 4
++            shape: MaterialShape.Cookie12Sided
++            color: Colours.palette.m3primaryContainer
+ 
+             layer.enabled: true
+             layer.effect: MultiEffect {
+@@ -228,21 +252,9 @@ WlSessionLockSurface {
+             id: lockIcon
+ 
+             anchors.centerIn: parent
+-            text: "lock"
+-            fontStyle: Tokens.font.icon.builders.extraLarge.scale(4).weight(Font.Bold).build()
+-            rotation: 180
+-        }
+-
+-        Content {
+-            id: content
+-
+-            anchors.centerIn: parent
+-            width: (root.screen?.height ?? 0) * Tokens.sizes.lock.heightMult * Tokens.sizes.lock.ratio - Tokens.padding.extraLargeIncreased
+-            height: (root.screen?.height ?? 0) * Tokens.sizes.lock.heightMult - Tokens.padding.extraLargeIncreased
+-
+-            lock: root
+-            opacity: 0
+-            scale: 0
++            text: root.unlocking ? "lock_open" : "lock"
++            color: Colours.palette.m3onPrimaryContainer
++            fontStyle: Tokens.font.icon.builders.extraLarge.scale(3).weight(Font.Bold).build()
+         }
+     }
+ }
+diff --git a/modules/lock/Media.qml b/modules/lock/Media.qml
+index 1769d20d..6c48b5e4 100644
+--- a/modules/lock/Media.qml
++++ b/modules/lock/Media.qml
+@@ -7,13 +7,12 @@ import Caelestia.I18n
+ import qs.components
+ import qs.components.controls
+ import qs.components.images
++import qs.components.widgets
+ import qs.services
+ 
+ ClipRect {
+     id: root
+ 
+-    required property var lock
+-
+     implicitHeight: layout.implicitHeight + layout.anchors.margins * 2
+     radius: Tokens.rounding.extraLarge
+     color: Colours.tPalette.m3surfaceContainer
+@@ -35,7 +34,7 @@ ClipRect {
+         StyledRect {
+             anchors.fill: parent
+             color: Colours.palette.m3surface
+-            opacity: 0.7
++            opacity: 0.8
+         }
+ 
+         Behavior on opacity {
+@@ -45,67 +44,74 @@ ClipRect {
+         }
+     }
+ 
+-    ColumnLayout {
++    RowLayout {
+         id: layout
+ 
+-        anchors.left: parent.left
+-        anchors.right: parent.right
+-        anchors.verticalCenter: parent.verticalCenter
+-        anchors.margins: Tokens.padding.extraLarge
+-        spacing: Tokens.spacing.extraSmall
+-
+-        StyledText {
+-            Layout.fillWidth: true
+-            animate: true
+-            text: (Players.active?.trackTitle ?? Tr.tr("Nothing playing")) || Tr.tr("Unknown track")
+-            color: Colours.palette.m3primary
+-            horizontalAlignment: Text.AlignHCenter
+-            font: Tokens.font.title.medium
+-            elide: Text.ElideRight
+-        }
++        anchors.fill: parent
++        anchors.margins: Tokens.padding.large
++        spacing: Tokens.spacing.large
+ 
+-        StyledText {
+-            Layout.fillWidth: true
+-            animate: true
+-            text: (Players.active?.trackArtist ?? Tr.tr("Try playing some music!")) || Tr.tr("Unknown artist")
+-            color: Colours.palette.m3onSurfaceVariant
+-            horizontalAlignment: Text.AlignHCenter
+-            font: Tokens.font.body.small
+-            elide: Text.ElideRight
++        CoverArt {
++            implicitWidth: details.implicitHeight
++            implicitHeight: details.implicitHeight
+         }
+ 
+-        ButtonRow {
+-            Layout.alignment: Qt.AlignHCenter
+-            Layout.topMargin: Tokens.spacing.medium
++        ColumnLayout {
++            id: details
+ 
++            Layout.fillWidth: true
+             spacing: Tokens.spacing.extraSmall
+ 
+-            IconButton {
+-                type: IconButton.Tonal
+-                icon: "skip_previous"
+-                isRound: true
+-                shapeMorph: true
+-                disabled: !Players.active?.canGoPrevious
+-                onClicked: Players.active?.previous()
++            StyledText {
++                Layout.fillWidth: true
++                animate: true
++                text: (Players.active?.trackTitle ?? Tr.tr("Nothing playing")) || Tr.tr("Unknown track")
++                color: Colours.palette.m3primary
++                font: Tokens.font.title.medium
++                elide: Text.ElideRight
+             }
+ 
+-            IconButton {
+-                icon: Players.active?.isPlaying ? "pause" : "play_arrow"
+-                isRound: true
+-                shapeMorph: true
+-                checked: Players.active?.isPlaying ?? false
+-                disabled: !Players.active?.canTogglePlaying
+-                onClicked: Players.active?.togglePlaying()
+-                implicitWidth: implicitHeight + Tokens.padding.largeIncreased * 2
++            StyledText {
++                Layout.fillWidth: true
++                animate: true
++                text: (Players.active?.trackArtist ?? Tr.tr("Try playing some music!")) || Tr.tr("Unknown artist")
++                color: Colours.palette.m3onSurfaceVariant
++                font: Tokens.font.body.small
++                elide: Text.ElideRight
+             }
+ 
+-            IconButton {
+-                type: IconButton.Tonal
+-                icon: "skip_next"
+-                isRound: true
+-                shapeMorph: true
+-                disabled: !Players.active?.canGoNext
+-                onClicked: Players.active?.next()
++            ButtonRow {
++                Layout.topMargin: Tokens.spacing.small
++
++                spacing: Tokens.spacing.extraSmall
++
++                IconButton {
++                    type: IconButton.Tonal
++                    icon: "skip_previous"
++                    isRound: true
++                    shapeMorph: true
++                    disabled: !Players.active?.canGoPrevious
++                    onClicked: Players.active?.previous()
++                }
++
++                IconButton {
++                    icon: Players.active?.isPlaying ? "pause" : "play_arrow"
++                    isRound: true
++                    shapeMorph: true
++                    checked: Players.active?.isPlaying ?? false
++                    disabled: !Players.active?.canTogglePlaying
++                    onClicked: Players.active?.togglePlaying()
++                    implicitWidth: implicitHeight + Tokens.padding.largeIncreased * 2
++                }
++
++                IconButton {
++                    type: IconButton.Tonal
++                    icon: "skip_next"
++                    isRound: true
++                    shapeMorph: true
++                    disabled: !Players.active?.canGoNext
++                    onClicked: Players.active?.next()
++                }
+             }
+         }
+     }
+diff --git a/modules/lock/Resources.qml b/modules/lock/Resources.qml
+deleted file mode 100644
+index 8f1435bd..00000000
+--- a/modules/lock/Resources.qml
++++ /dev/null
+@@ -1,281 +0,0 @@
+-pragma ComponentBehavior: Bound
+-
+-import QtQuick
+-import QtQuick.Layouts
+-import Quickshell
+-import M3Shapes
+-import Caelestia.Config
+-import Caelestia.I18n
+-import Caelestia.Services
+-import qs.components
+-import qs.components.controls
+-import qs.components.effects
+-import qs.components.widgets
+-import qs.services
+-import qs.utils
+-
+-StyledRect {
+-    id: root
+-
+-    readonly property bool sessionControlsShown: GlobalConfig.lock.enableSessionControls && hover.hovered
+-    readonly property real fontScale: {
+-        const diff = width / 391 - 1; // 391 is the width at 1080 height screen
+-        return 1 + Math.pow(Math.abs(diff), 0.8) * Math.sign(diff);
+-    }
+-
+-    implicitHeight: layout.implicitHeight + Tokens.padding.large * 2
+-    radius: Tokens.rounding.extraLarge
+-    color: Colours.tPalette.m3surfaceContainer
+-
+-    ServiceRef {
+-        service: Cpu
+-    }
+-
+-    ServiceRef {
+-        service: Memory
+-    }
+-
+-    ServiceRef {
+-        service: Storage
+-    }
+-
+-    HoverHandler {
+-        id: hover
+-
+-        enabled: GlobalConfig.lock.enableSessionControls
+-    }
+-
+-    Item {
+-        anchors.fill: parent
+-        clip: true
+-
+-        Item {
+-            anchors.fill: parent
+-            anchors.margins: Tokens.padding.large
+-
+-            Translate {
+-                id: resourcesTranslate
+-
+-                y: root.sessionControlsShown ? root.height : 0
+-
+-                Behavior on y {
+-                    Anim {}
+-                }
+-            }
+-
+-            Translate {
+-                id: buttonsTranslate
+-
+-                y: root.sessionControlsShown ? 0 : -root.height
+-
+-                Behavior on y {
+-                    Anim {}
+-                }
+-            }
+-
+-            RowLayout {
+-                id: layout
+-
+-                anchors.left: parent.left
+-                anchors.right: parent.right
+-                spacing: Tokens.spacing.large
+-
+-                transform: resourcesTranslate
+-                opacity: root.sessionControlsShown ? 0 : 1
+-
+-                Behavior on opacity {
+-                    Anim {}
+-                }
+-
+-                Resource {
+-                    id: cpu
+-
+-                    icon: "memory"
+-                    value: Strings.percentOne(Cpu.percentage)
+-                    fillValue: Cpu.percentage
+-                    colour: Colours.palette.m3primary
+-                    shapeColour: Colours.palette.m3primaryContainer
+-                    fillColour: Qt.alpha(Colours.palette.m3secondary, 0.3)
+-                    shape: MaterialShape.Pentagon
+-
+-                    MaterialShape {
+-                        x: cpu.mShape.pointAtAngle(45).x - implicitSize / 2 + Tokens.padding.medium
+-                        y: Math.max(cpu.mShape.pointAtAngle(45).y - implicitSize / 2, 1 - Tokens.padding.large)
+-
+-                        shape: Cpu.temperature > 90 ? MaterialShape.SoftBurst : MaterialShape.Circle
+-                        color: Cpu.temperature > 90 ? Colours.palette.m3errorContainer : Colours.palette.m3secondaryContainer
+-                        implicitSize: {
+-                            const size = Math.round(tempLabel.implicitHeight * 2);
+-                            return size % 2 === 0 ? size : size + 1; // Ensure even size so center works properly
+-                        }
+-
+-                        Behavior on color {
+-                            CAnim {}
+-                        }
+-
+-                        StyledText {
+-                            id: tempLabel
+-
+-                            anchors.centerIn: parent
+-                            anchors.verticalCenterOffset: Math.round(fontInfo.pointSize * 0.04)
+-
+-                            text: Units.formatSensorTemp(Cpu.temperature)
+-                            color: Cpu.temperature > 90 ? Colours.palette.m3onErrorContainer : Colours.palette.m3secondary
+-                            font: Tokens.font.title.builders.medium.scale(cpu.width / 112).width(50).build()
+-                        }
+-                    }
+-                }
+-
+-                Resource {
+-                    icon: "memory_alt"
+-                    value: Strings.percentOne(Memory.percentage)
+-                    fillValue: Memory.percentage
+-                    colour: Colours.palette.m3tertiary
+-                    shapeColour: Colours.palette.m3onTertiary
+-                    fillColour: Qt.alpha(Colours.palette.m3tertiary, 0.3)
+-                    shape: MaterialShape.Slanted
+-                }
+-
+-                Resource {
+-                    icon: "hard_disk"
+-                    value: Strings.percentOne(Storage.percentage)
+-                    fillValue: Storage.percentage
+-                    colour: Colours.palette.m3secondary
+-                    shapeColour: Colours.palette.m3secondaryContainer
+-                    fillColour: Qt.alpha(Colours.palette.m3secondary, 0.4)
+-                    shape: MaterialShape.Gem
+-                }
+-            }
+-
+-            RowLayout {
+-                id: buttonsLayout
+-
+-                anchors.left: parent.left
+-                anchors.right: parent.right
+-                anchors.verticalCenter: parent.verticalCenter
+-                anchors.margins: Tokens.padding.large
+-                spacing: Tokens.spacing.large
+-
+-                transform: buttonsTranslate
+-                opacity: root.sessionControlsShown ? 1 : 0
+-
+-                Behavior on opacity {
+-                    Anim {}
+-                }
+-
+-                SessionButton {
+-                    icon: Config.session.icons.logout
+-                    command: Config.session.commands.logout
+-                }
+-                SessionButton {
+-                    icon: Config.session.icons.shutdown
+-                    command: Config.session.commands.shutdown
+-                }
+-                SessionButton {
+-                    icon: Config.session.icons.hibernate
+-                    command: Config.session.commands.hibernate
+-                }
+-                SessionButton {
+-                    icon: Config.session.icons.reboot
+-                    command: Config.session.commands.reboot
+-                }
+-            }
+-        }
+-    }
+-
+-    component SessionButton: IconButton {
+-        id: button
+-
+-        required property list<string> command
+-
+-        function exec(): void {
+-            if (!SessionManager.exec(command))
+-                Quickshell.execDetached(command);
+-        }
+-
+-        Layout.fillWidth: true
+-        Layout.preferredHeight: width
+-
+-        inactiveColour: activeFocus ? Colours.palette.m3secondaryContainer : Colours.tPalette.m3surfaceContainerHigh
+-        inactiveOnColour: activeFocus ? Colours.palette.m3onSecondaryContainer : Colours.palette.m3onSurface
+-        radius: pressed ? Tokens.rounding.medium : activeFocus ? Tokens.rounding.extraLarge : Tokens.rounding.largeIncreased
+-        font: Tokens.font.icon.builders.large.scale(root.fontScale * 1.3).build()
+-        onClicked: exec()
+-    }
+-
+-    component Resource: Item {
+-        id: res
+-
+-        required property string icon
+-        required property string value
+-        required property color colour
+-        required property color shapeColour
+-        property color fillColour
+-        property real fillValue: -1
+-        property alias shape: shape.shape
+-        readonly property alias mShape: shape
+-
+-        Layout.fillWidth: true
+-        implicitHeight: width
+-
+-        Behavior on shapeColour {
+-            CAnim {}
+-        }
+-
+-        MaterialShape {
+-            id: shape
+-
+-            implicitSize: res.width
+-            color: Qt.alpha(res.shapeColour, 1)
+-            opacity: res.shapeColour.a
+-            layer.enabled: true
+-        }
+-
+-        Loader {
+-            id: fillLoader
+-
+-            anchors.fill: shape
+-            active: res.fillValue >= 0
+-            asynchronous: true
+-
+-            layer.enabled: active
+-            layer.effect: Mask {
+-                maskSource: shape
+-            }
+-
+-            sourceComponent: Item {
+-                WavyTopRect {
+-                    anchors.left: parent.left
+-                    anchors.right: parent.right
+-                    anchors.bottom: parent.bottom
+-
+-                    implicitHeight: shape.implicitSize * res.fillValue
+-                    color: res.fillColour
+-                }
+-            }
+-        }
+-
+-        ColumnLayout {
+-            anchors.centerIn: parent
+-            spacing: -Tokens.spacing.extraSmall
+-
+-            MaterialIcon {
+-                Layout.alignment: Qt.AlignHCenter
+-                text: res.icon
+-                color: Colours.palette.m3secondary
+-                fontStyle: Tokens.font.icon.builders.medium.scale(root.fontScale).build()
+-            }
+-
+-            StyledText {
+-                Layout.alignment: Qt.AlignHCenter
+-                text: res.value
+-                color: res.colour
+-                font: Tokens.font.headline.builders.large.scale(root.fontScale).width(50).build()
+-            }
+-        }
+-
+-        Behavior on fillValue {
+-            Anim {}
+-        }
+-    }
+-}
+diff --git a/modules/lock/SessionControls.qml b/modules/lock/SessionControls.qml
+new file mode 100644
+index 00000000..3939ca49
+--- /dev/null
++++ b/modules/lock/SessionControls.qml
+@@ -0,0 +1,53 @@
++pragma ComponentBehavior: Bound
++
++import QtQuick
++import QtQuick.Layouts
++import Quickshell
++import Caelestia.Config
++import Caelestia.Services
++import qs.components.controls
++import qs.services
++
++RowLayout {
++    id: root
++
++    spacing: Tokens.spacing.small
++
++    SessionButton {
++        icon: Config.session.icons.logout
++        command: Config.session.commands.logout
++    }
++
++    SessionButton {
++        icon: Config.session.icons.shutdown
++        command: Config.session.commands.shutdown
++    }
++
++    SessionButton {
++        icon: Config.session.icons.hibernate
++        command: Config.session.commands.hibernate
++    }
++
++    SessionButton {
++        icon: Config.session.icons.reboot
++        command: Config.session.commands.reboot
++    }
++
++    component SessionButton: IconButton {
++        required property list<string> command
++
++        function exec(): void {
++            if (!SessionManager.exec(command))
++                Quickshell.execDetached(command);
++        }
++
++        Layout.fillWidth: true
++
++        padding: Tokens.padding.medium
++        inactiveColour: Colours.tPalette.m3surfaceContainer
++        inactiveOnColour: Colours.palette.m3onSurface
++        radius: pressed ? Tokens.rounding.medium : Tokens.rounding.extraLarge
++        font: Tokens.font.icon.large
++        onClicked: exec()
++    }
++}
+diff --git a/modules/lock/WeatherInfo.qml b/modules/lock/WeatherInfo.qml
+index d373bdf5..6b4217dd 100644
+--- a/modules/lock/WeatherInfo.qml
++++ b/modules/lock/WeatherInfo.qml
+@@ -1,23 +1,14 @@
+ import QtQuick
++import QtQuick.Layouts
+ import Caelestia.Config
++import Caelestia.I18n
+ import qs.components
+ import qs.services
+-import qs.modules.lock.weather
+ 
+-StyledRect {
++RowLayout {
+     id: root
+ 
+-    required property int rootHeight
+-    readonly property bool showForecast: rootHeight >= Tokens.sizes.lock.showForecastHeight
+-
+-    implicitHeight: {
+-        const base = brief.implicitHeight + brief.anchors.topMargin;
+-        if (showForecast)
+-            return base + Tokens.spacing.largeIncreased + forecast.implicitHeight + forecast.anchors.margins;
+-        return base + brief.anchors.topMargin;
+-    }
+-    radius: Tokens.rounding.extraExtraLarge
+-    color: Colours.tPalette.m3surfaceContainer
++    spacing: Tokens.spacing.large
+ 
+     Timer {
+         running: true
+@@ -27,27 +18,44 @@ StyledRect {
+         onTriggered: Weather.reload()
+     }
+ 
+-    BriefInfo {
+-        id: brief
+-
+-        anchors.horizontalCenter: parent.horizontalCenter
+-        anchors.top: parent.top
+-        anchors.topMargin: Tokens.padding.extraLarge
+-
+-        rootHeight: root.rootHeight
++    MaterialIcon {
++        animate: true
++        text: Weather.icon
++        color: Colours.palette.m3secondary
++        fontStyle: Tokens.font.icon.builders.extraLarge.scale(1.4).build()
+     }
+ 
+-    Loader {
+-        id: forecast
+-
+-        anchors.left: parent.left
+-        anchors.right: parent.right
+-        anchors.bottom: parent.bottom
+-        anchors.margins: Tokens.padding.large
+-
+-        active: root.showForecast
+-        asynchronous: true
++    StyledText {
++        animate: true
++        text: Weather.temp
++        color: Colours.palette.m3primary
++        font: Tokens.font.headline.builders.large.weight(Font.DemiBold).width(80).build()
++    }
+ 
+-        sourceComponent: Forecast {}
++    ColumnLayout {
++        Layout.fillWidth: true
++        spacing: 0
++
++        StyledText {
++            Layout.fillWidth: true
++            animate: true
++            text: Weather.description
++            color: Colours.palette.m3onSurface
++            font: Tokens.font.title.medium
++            elide: Text.ElideRight
++        }
++
++        StyledText {
++            Layout.fillWidth: true
++            animate: true
++            text: {
++                const today = Weather.forecast[0];
++                // TRANSLATORS: %1/%2 = today's max and min temperature, units already included
++                return Tr.tr("High %1 • Low %2").arg(Weather.formatTemp(today?.maxTempC)).arg(Weather.formatTemp(today?.minTempC));
++            }
++            color: Colours.palette.m3onSurfaceVariant
++            font: Tokens.font.body.medium
++            elide: Text.ElideRight
++        }
+     }
+ }
+diff --git a/modules/lock/center/Clock.qml b/modules/lock/center/Clock.qml
+index 01d9bc91..35a46516 100644
+--- a/modules/lock/center/Clock.qml
++++ b/modules/lock/center/Clock.qml
+@@ -9,22 +9,33 @@ import qs.services
+ Item {
+     id: root
+ 
+-    required property real centerScale
++    required property real heroScale
+ 
+-    function calcTopOff(metrics: TextMetrics): real {
+-        return metrics.tightBoundingRect.y - metrics.boundingRect.y;
+-    }
++    readonly property font clockFont: Tokens.font.headline.builders.large.scale(8 * heroScale).width(62).weight(Font.DemiBold).build()
++    readonly property real digitHeight: digitMetrics.tightBoundingRect.height
++    readonly property real topOff: digitMetrics.tightBoundingRect.y - digitMetrics.boundingRect.y
++    readonly property int lineGap: Math.round(Tokens.spacing.largeIncreased * heroScale)
++
++    implicitWidth: Math.max(hourMetrics.tightBoundingRect.width, minuteMetrics.tightBoundingRect.width + (amPm.active ? amPm.width + amPm.anchors.leftMargin : 0))
++    implicitHeight: digitHeight * 2 + lineGap
+ 
+-    implicitWidth: hours.implicitWidth + minutes.implicitWidth + Tokens.spacing.small
+-    implicitHeight: hourMetrics.tightBoundingRect.height
++    // Fixed reference so the layout doesn't jitter as the digits change
++    TextMetrics {
++        id: digitMetrics
++
++        text: "0"
++        font: root.clockFont
++    }
+ 
+     StyledText {
+         id: hours
+ 
+-        y: -root.calcTopOff(hourMetrics)
++        x: -hourMetrics.tightBoundingRect.x
++        y: -root.topOff
++
+         text: Time.hourStr
+         color: Colours.palette.m3primary
+-        font: Tokens.font.headline.builders.large.scale(7 * root.centerScale).width(30).build()
++        font: root.clockFont
+ 
+         TextMetrics {
+             id: hourMetrics
+@@ -37,12 +48,12 @@ Item {
+     StyledText {
+         id: minutes
+ 
+-        anchors.right: parent.right
+-        y: -root.calcTopOff(minuteMetrics)
++        x: -minuteMetrics.tightBoundingRect.x
++        y: root.digitHeight + root.lineGap - root.topOff
+ 
+         text: Time.minuteStr
+         color: Colours.palette.m3secondary
+-        font: Tokens.font.headline.builders.large.scale((Units.twelveHourClock ? 3.8 : 7) * root.centerScale).width(30).build()
++        font: root.clockFont
+ 
+         TextMetrics {
+             id: minuteMetrics
+@@ -53,41 +64,30 @@ Item {
+     }
+ 
+     Loader {
+-        anchors.left: minutes.left
+-        anchors.leftMargin: minuteMetrics.tightBoundingRect.x
+-        y: hourMetrics.tightBoundingRect.height - implicitHeight
++        id: amPm
++
++        anchors.left: parent.left
++        anchors.leftMargin: minuteMetrics.tightBoundingRect.width + Math.round(Tokens.spacing.large * root.heroScale)
++        anchors.bottom: parent.bottom
+ 
+         active: Units.twelveHourClock
++        visible: active
+         asynchronous: true
+ 
+         sourceComponent: StyledRect {
+             color: Colours.tPalette.m3surfaceContainerHigh
+-            radius: Tokens.rounding.large
++            radius: Tokens.rounding.full
+ 
+-            implicitWidth: minuteMetrics.tightBoundingRect.width
+-            implicitHeight: amPmMetrics.tightBoundingRect.height + Tokens.padding.large * 2
++            implicitWidth: amPmText.implicitWidth + Tokens.padding.large * 2
++            implicitHeight: amPmText.implicitHeight + Tokens.padding.small * 2
+ 
+             StyledText {
+-                id: amPm
++                id: amPmText
+ 
+                 anchors.centerIn: parent
+-                width: amPmMetrics.tightBoundingRect.width
+-                height: amPmMetrics.tightBoundingRect.height
+-                transform: Translate {
+-                    x: -amPmMetrics.tightBoundingRect.x
+-                    y: -root.calcTopOff(amPmMetrics)
+-                }
+-
+                 text: Time.amPmStr
+                 color: Colours.palette.m3onSurface
+-                font: Tokens.font.headline.builders.small.scale(2 * root.centerScale).width(30).build()
+-
+-                TextMetrics {
+-                    id: amPmMetrics
+-
+-                    text: amPm.text
+-                    font: amPm.font
+-                }
++                font: Tokens.font.title.builders.large.scale(root.heroScale).weight(Font.DemiBold).build()
+             }
+         }
+     }
+diff --git a/modules/lock/center/InputField.qml b/modules/lock/center/InputField.qml
+index ce27e996..097f4acd 100644
+--- a/modules/lock/center/InputField.qml
++++ b/modules/lock/center/InputField.qml
+@@ -12,7 +12,7 @@ import qs.modules.lock
+ Item {
+     id: root
+ 
+-    required property real centerScale
++    required property real inputScale
+     required property Pam pam
+     readonly property alias placeholder: placeholder
+     readonly property alias placeholderWidth: nonAnimPlaceholder.width
+@@ -70,7 +70,7 @@ Item {
+ 
+         animate: true
+         color: root.pam.passwd.active ? Colours.palette.m3secondary : Colours.palette.m3outline
+-        font: Tokens.font.body.builders.medium.scale(root.centerScale).width(110).build()
++        font: Tokens.font.body.builders.medium.scale(root.inputScale).width(110).build()
+ 
+         opacity: root.buffer ? 0 : 1
+ 
+diff --git a/modules/lock/center/PasswordInput.qml b/modules/lock/center/PasswordInput.qml
+index 076e7118..1f0f3b3f 100644
+--- a/modules/lock/center/PasswordInput.qml
++++ b/modules/lock/center/PasswordInput.qml
+@@ -11,15 +11,18 @@ import qs.services
+ StyledRect {
+     id: root
+ 
+-    required property real centerScale
+-    required property int centerWidth
++    required property real inputScale
++    required property real maxWidth
+     required property var lock
+ 
+     implicitWidth: {
+-        const w = centerWidth * 0.8;
+-        return lock.pam.buffer ? w : Math.min(w, inputField.placeholderWidth + iconWrapper.implicitWidth + enterButton.implicitWidth + input.spacing * 2 + Tokens.padding.medium * 2);
++        const w = Math.round(maxWidth);
++        return lock.pam.buffer ? w : Math.min(w, inputField.placeholderWidth + iconWrapper.implicitWidth + enterButton.implicitWidth + input.spacing * 2 + Tokens.padding.large * 2);
++    }
++    implicitHeight: {
++        const h = Math.round(enterIcon.implicitHeight + Tokens.padding.large * 2);
++        return h + (h % 2); // Even so the round ends and icons center properly
+     }
+-    implicitHeight: input.implicitHeight + Tokens.padding.small
+ 
+     color: Colours.tPalette.m3surfaceContainer
+     radius: Tokens.rounding.full
+@@ -54,7 +57,7 @@ StyledRect {
+         id: input
+ 
+         anchors.fill: parent
+-        anchors.margins: Tokens.padding.extraSmall
++        anchors.margins: Tokens.padding.small
+         spacing: Tokens.spacing.medium
+ 
+         Item {
+@@ -89,7 +92,7 @@ StyledRect {
+                         return "lock";
+                     }
+                     color: !root.lock.pam.howdy.canAttempt && root.lock.pam.fprint.tries >= GlobalConfig.lock.maxFprintTries ? Colours.palette.m3error : Colours.palette.m3onSurfaceVariant
+-                    fontStyle: Tokens.font.icon.builders.medium.scale(root.centerScale).build()
++                    fontStyle: Tokens.font.icon.builders.medium.scale(root.inputScale).build()
+                     fill: text === "face" || text === "visibility"
+ 
+                     StateLayer {
+@@ -126,18 +129,15 @@ StyledRect {
+             Layout.fillWidth: true
+             Layout.fillHeight: true
+ 
+-            centerScale: root.centerScale
++            inputScale: root.inputScale
+             pam: root.lock.pam
+         }
+ 
+         Item {
+             id: enterButton
+ 
+-            implicitWidth: implicitHeight
+-            implicitHeight: {
+-                const h = enterIcon.implicitHeight + Tokens.padding.extraSmall * 2;
+-                return h % 2 === 0 ? h : h + 1;
+-            }
++            Layout.fillHeight: true
++            implicitWidth: height
+ 
+             MaterialShape {
+                 anchors.fill: parent
+@@ -173,7 +173,7 @@ StyledRect {
+                 anchors.centerIn: parent
+                 text: "arrow_forward"
+                 color: Colours.palette.m3onSurfaceVariant
+-                fontStyle: Tokens.font.icon.builders.medium.scale(root.centerScale * 1.2).build()
++                fontStyle: Tokens.font.icon.builders.medium.scale(root.inputScale * 1.2).build()
+                 opacity: root.lock.pam.buffer ? 0 : 1
+ 
+                 Behavior on opacity {
+diff --git a/modules/lock/center/ProfilePic.qml b/modules/lock/center/ProfilePic.qml
+index a9fb6241..b88ee2fe 100644
+--- a/modules/lock/center/ProfilePic.qml
++++ b/modules/lock/center/ProfilePic.qml
+@@ -2,7 +2,6 @@ pragma ComponentBehavior: Bound
+ 
+ import QtQuick
+ import M3Shapes
+-import Caelestia
+ import Caelestia.Config
+ import Caelestia.Multimedia
+ import qs.components
+@@ -13,22 +12,19 @@ import qs.utils
+ Item {
+     id: root
+ 
+-    required property int centerWidth
++    required property int size
+     readonly property color bgColour: Colours.tPalette.m3surfaceContainerHighest
+ 
+-    implicitWidth: Math.round(centerWidth * 0.7)
+-    implicitHeight: {
+-        CUtils.dependency(shape.height); // Force update when shape height changes
+-        return shape.pathBounds().height;
+-    }
++    implicitWidth: size
++    implicitHeight: size
+ 
+     MaterialShape {
+         id: shape
+ 
+         anchors.centerIn: parent
+-        implicitSize: root.implicitWidth
++        implicitSize: root.size
+ 
+-        shape: MaterialShape.ClamShell
++        shape: MaterialShape.Cookie9Sided
+         color: Qt.alpha(root.bgColour, 1)
+         opacity: root.bgColour.a
+         layer.enabled: true
+@@ -39,7 +35,7 @@ Item {
+ 
+         text: "person"
+         color: Colours.palette.m3onSurfaceVariant
+-        fontStyle: Tokens.font.icon.size(root.centerWidth / 4).build()
++        fontStyle: Tokens.font.icon.size(Math.max(1, Math.round(root.size * 0.45))).build()
+         visible: !pfp.ready
+     }
+ 
+diff --git a/modules/lock/center/StateMessage.qml b/modules/lock/center/StateMessage.qml
+index 6be3b408..ebfff509 100644
+--- a/modules/lock/center/StateMessage.qml
++++ b/modules/lock/center/StateMessage.qml
+@@ -151,7 +151,7 @@ Item {
+         color: Colours.palette.m3onSurfaceVariant
+ 
+         font: Tokens.font.body.small
+-        horizontalAlignment: Qt.AlignHCenter
++        transformOrigin: Item.Left
+         wrapMode: Text.WrapAtWordBoundaryOrAnywhere
+         lineHeight: 1.2
+ 
+@@ -177,7 +177,7 @@ Item {
+         color: Colours.palette.m3error
+ 
+         font: Tokens.font.body.small
+-        horizontalAlignment: Qt.AlignHCenter
++        transformOrigin: Item.Left
+         wrapMode: Text.WrapAtWordBoundaryOrAnywhere
+ 
+         Connections {
+diff --git a/modules/lock/weather/BriefInfo.qml b/modules/lock/weather/BriefInfo.qml
+deleted file mode 100644
+index 59e48564..00000000
+--- a/modules/lock/weather/BriefInfo.qml
++++ /dev/null
+@@ -1,66 +0,0 @@
+-import QtQuick
+-import QtQuick.Layouts
+-import Caelestia.Config
+-import Caelestia.I18n
+-import qs.components
+-import qs.services
+-
+-ColumnLayout {
+-    id: root
+-
+-    required property int rootHeight
+-
+-    spacing: Tokens.spacing.extraSmall
+-
+-    StyledText {
+-        Layout.alignment: Qt.AlignHCenter
+-        animate: true
+-        text: Weather.description
+-        color: Colours.palette.m3onSurfaceVariant
+-        font: Tokens.font.body.large
+-    }
+-
+-    RowLayout {
+-        Layout.alignment: Qt.AlignHCenter
+-        spacing: Tokens.spacing.medium
+-
+-        StyledText {
+-            id: temp
+-
+-            animate: true
+-            text: Weather.temp
+-            color: Colours.palette.m3primary
+-            font: Tokens.font.headline.builders.large.scale(1.5).weight(Font.DemiBold).width(80).build()
+-        }
+-
+-        MaterialIcon {
+-            animate: true
+-            text: Weather.icon
+-            color: Colours.palette.m3secondary
+-            fontStyle: Tokens.font.headline.builders.large.scale(1.5).build()
+-        }
+-    }
+-
+-    StyledText {
+-        visible: root.rootHeight > Tokens.sizes.lock.showWeatherDetailsHeight
+-        Layout.alignment: Qt.AlignHCenter
+-        animate: true
+-        // TRANSLATORS: %1 = apparent temperature, unit already included
+-        text: Tr.tr("Feels like %1").arg(Weather.temp)
+-        color: Colours.palette.m3onSurfaceVariant
+-        font: Tokens.font.body.large
+-    }
+-
+-    StyledText {
+-        visible: root.rootHeight > Tokens.sizes.lock.showWeatherDetailsHeight
+-        Layout.alignment: Qt.AlignHCenter
+-        animate: true
+-        text: {
+-            const today = Weather.forecast[0];
+-            // TRANSLATORS: %1/%2 = today's max and min temperature, units already included
+-            return Tr.tr("High %1 • Low %2").arg(Weather.formatTemp(today?.maxTempC)).arg(Weather.formatTemp(today?.minTempC));
+-        }
+-        color: Colours.palette.m3onSurfaceVariant
+-        font: Tokens.font.body.medium
+-    }
+-}

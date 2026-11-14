@@ -11,15 +11,18 @@ import qs.services
 StyledRect {
     id: root
 
-    required property real centerScale
-    required property int centerWidth
+    required property real inputScale
+    required property real maxWidth
     required property var lock
 
     implicitWidth: {
-        const w = centerWidth * 0.8;
-        return lock.pam.buffer ? w : Math.min(w, inputField.placeholderWidth + iconWrapper.implicitWidth + enterButton.implicitWidth + input.spacing * 2 + Tokens.padding.medium * 2);
+        const w = Math.round(maxWidth);
+        return lock.pam.buffer ? w : Math.min(w, inputField.placeholderWidth + iconWrapper.implicitWidth + enterButton.implicitWidth + input.spacing * 2 + Tokens.padding.large * 2);
     }
-    implicitHeight: input.implicitHeight + Tokens.padding.small
+    implicitHeight: {
+        const h = Math.round(enterIcon.implicitHeight + Tokens.padding.large * 2);
+        return h + (h % 2); // Even so the round ends and icons center properly
+    }
 
     color: Colours.tPalette.m3surfaceContainer
     radius: Tokens.rounding.full
@@ -54,7 +57,7 @@ StyledRect {
         id: input
 
         anchors.fill: parent
-        anchors.margins: Tokens.padding.extraSmall
+        anchors.margins: Tokens.padding.small
         spacing: Tokens.spacing.medium
 
         Item {
@@ -89,7 +92,7 @@ StyledRect {
                         return "lock";
                     }
                     color: !root.lock.pam.howdy.canAttempt && root.lock.pam.fprint.tries >= GlobalConfig.lock.maxFprintTries ? Colours.palette.m3error : Colours.palette.m3onSurfaceVariant
-                    fontStyle: Tokens.font.icon.builders.medium.scale(root.centerScale).build()
+                    fontStyle: Tokens.font.icon.builders.medium.scale(root.inputScale).build()
                     fill: text === "face" || text === "visibility"
 
                     StateLayer {
@@ -126,18 +129,15 @@ StyledRect {
             Layout.fillWidth: true
             Layout.fillHeight: true
 
-            centerScale: root.centerScale
+            inputScale: root.inputScale
             pam: root.lock.pam
         }
 
         Item {
             id: enterButton
 
-            implicitWidth: implicitHeight
-            implicitHeight: {
-                const h = enterIcon.implicitHeight + Tokens.padding.extraSmall * 2;
-                return h % 2 === 0 ? h : h + 1;
-            }
+            Layout.fillHeight: true
+            implicitWidth: height
 
             MaterialShape {
                 anchors.fill: parent
@@ -173,7 +173,7 @@ StyledRect {
                 anchors.centerIn: parent
                 text: "arrow_forward"
                 color: Colours.palette.m3onSurfaceVariant
-                fontStyle: Tokens.font.icon.builders.medium.scale(root.centerScale * 1.2).build()
+                fontStyle: Tokens.font.icon.builders.medium.scale(root.inputScale * 1.2).build()
                 opacity: root.lock.pam.buffer ? 0 : 1
 
                 Behavior on opacity {

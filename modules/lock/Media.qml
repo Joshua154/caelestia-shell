@@ -7,12 +7,11 @@ import Caelestia.I18n
 import qs.components
 import qs.components.controls
 import qs.components.images
+import qs.components.widgets
 import qs.services
 
 ClipRect {
     id: root
-
-    required property var lock
 
     implicitHeight: layout.implicitHeight + layout.anchors.margins * 2
     radius: Tokens.rounding.extraLarge
@@ -35,7 +34,7 @@ ClipRect {
         StyledRect {
             anchors.fill: parent
             color: Colours.palette.m3surface
-            opacity: 0.7
+            opacity: 0.8
         }
 
         Behavior on opacity {
@@ -45,67 +44,74 @@ ClipRect {
         }
     }
 
-    ColumnLayout {
+    RowLayout {
         id: layout
 
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.verticalCenter: parent.verticalCenter
-        anchors.margins: Tokens.padding.extraLarge
-        spacing: Tokens.spacing.extraSmall
+        anchors.fill: parent
+        anchors.margins: Tokens.padding.large
+        spacing: Tokens.spacing.large
 
-        StyledText {
-            Layout.fillWidth: true
-            animate: true
-            text: (Players.active?.trackTitle ?? Tr.tr("Nothing playing")) || Tr.tr("Unknown track")
-            color: Colours.palette.m3primary
-            horizontalAlignment: Text.AlignHCenter
-            font: Tokens.font.title.medium
-            elide: Text.ElideRight
+        CoverArt {
+            implicitWidth: details.implicitHeight
+            implicitHeight: details.implicitHeight
         }
 
-        StyledText {
+        ColumnLayout {
+            id: details
+
             Layout.fillWidth: true
-            animate: true
-            text: (Players.active?.trackArtist ?? Tr.tr("Try playing some music!")) || Tr.tr("Unknown artist")
-            color: Colours.palette.m3onSurfaceVariant
-            horizontalAlignment: Text.AlignHCenter
-            font: Tokens.font.body.small
-            elide: Text.ElideRight
-        }
-
-        ButtonRow {
-            Layout.alignment: Qt.AlignHCenter
-            Layout.topMargin: Tokens.spacing.medium
-
             spacing: Tokens.spacing.extraSmall
 
-            IconButton {
-                type: IconButton.Tonal
-                icon: "skip_previous"
-                isRound: true
-                shapeMorph: true
-                disabled: !Players.active?.canGoPrevious
-                onClicked: Players.active?.previous()
+            StyledText {
+                Layout.fillWidth: true
+                animate: true
+                text: (Players.active?.trackTitle ?? Tr.tr("Nothing playing")) || Tr.tr("Unknown track")
+                color: Colours.palette.m3primary
+                font: Tokens.font.title.medium
+                elide: Text.ElideRight
             }
 
-            IconButton {
-                icon: Players.active?.isPlaying ? "pause" : "play_arrow"
-                isRound: true
-                shapeMorph: true
-                checked: Players.active?.isPlaying ?? false
-                disabled: !Players.active?.canTogglePlaying
-                onClicked: Players.active?.togglePlaying()
-                implicitWidth: implicitHeight + Tokens.padding.largeIncreased * 2
+            StyledText {
+                Layout.fillWidth: true
+                animate: true
+                text: (Players.active?.trackArtist ?? Tr.tr("Try playing some music!")) || Tr.tr("Unknown artist")
+                color: Colours.palette.m3onSurfaceVariant
+                font: Tokens.font.body.small
+                elide: Text.ElideRight
             }
 
-            IconButton {
-                type: IconButton.Tonal
-                icon: "skip_next"
-                isRound: true
-                shapeMorph: true
-                disabled: !Players.active?.canGoNext
-                onClicked: Players.active?.next()
+            ButtonRow {
+                Layout.topMargin: Tokens.spacing.small
+
+                spacing: Tokens.spacing.extraSmall
+
+                IconButton {
+                    type: IconButton.Tonal
+                    icon: "skip_previous"
+                    isRound: true
+                    shapeMorph: true
+                    disabled: !Players.active?.canGoPrevious
+                    onClicked: Players.active?.previous()
+                }
+
+                IconButton {
+                    icon: Players.active?.isPlaying ? "pause" : "play_arrow"
+                    isRound: true
+                    shapeMorph: true
+                    checked: Players.active?.isPlaying ?? false
+                    disabled: !Players.active?.canTogglePlaying
+                    onClicked: Players.active?.togglePlaying()
+                    implicitWidth: implicitHeight + Tokens.padding.largeIncreased * 2
+                }
+
+                IconButton {
+                    type: IconButton.Tonal
+                    icon: "skip_next"
+                    isRound: true
+                    shapeMorph: true
+                    disabled: !Players.active?.canGoNext
+                    onClicked: Players.active?.next()
+                }
             }
         }
     }

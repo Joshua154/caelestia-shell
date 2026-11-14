@@ -9,22 +9,33 @@ import qs.services
 Item {
     id: root
 
-    required property real centerScale
+    required property real heroScale
 
-    function calcTopOff(metrics: TextMetrics): real {
-        return metrics.tightBoundingRect.y - metrics.boundingRect.y;
+    readonly property font clockFont: Tokens.font.headline.builders.large.scale(8 * heroScale).width(62).weight(Font.DemiBold).build()
+    readonly property real digitHeight: digitMetrics.tightBoundingRect.height
+    readonly property real topOff: digitMetrics.tightBoundingRect.y - digitMetrics.boundingRect.y
+    readonly property int lineGap: Math.round(Tokens.spacing.largeIncreased * heroScale)
+
+    implicitWidth: Math.max(hourMetrics.tightBoundingRect.width, minuteMetrics.tightBoundingRect.width + (amPm.active ? amPm.width + amPm.anchors.leftMargin : 0))
+    implicitHeight: digitHeight * 2 + lineGap
+
+    // Fixed reference so the layout doesn't jitter as the digits change
+    TextMetrics {
+        id: digitMetrics
+
+        text: "0"
+        font: root.clockFont
     }
-
-    implicitWidth: hours.implicitWidth + minutes.implicitWidth + Tokens.spacing.small
-    implicitHeight: hourMetrics.tightBoundingRect.height
 
     StyledText {
         id: hours
 
-        y: -root.calcTopOff(hourMetrics)
+        x: -hourMetrics.tightBoundingRect.x
+        y: -root.topOff
+
         text: Time.hourStr
         color: Colours.palette.m3primary
-        font: Tokens.font.headline.builders.large.scale(7 * root.centerScale).width(30).build()
+        font: root.clockFont
 
         TextMetrics {
             id: hourMetrics
@@ -37,12 +48,12 @@ Item {
     StyledText {
         id: minutes
 
-        anchors.right: parent.right
-        y: -root.calcTopOff(minuteMetrics)
+        x: -minuteMetrics.tightBoundingRect.x
+        y: root.digitHeight + root.lineGap - root.topOff
 
         text: Time.minuteStr
         color: Colours.palette.m3secondary
-        font: Tokens.font.headline.builders.large.scale((Units.twelveHourClock ? 3.8 : 7) * root.centerScale).width(30).build()
+        font: root.clockFont
 
         TextMetrics {
             id: minuteMetrics
@@ -53,41 +64,30 @@ Item {
     }
 
     Loader {
-        anchors.left: minutes.left
-        anchors.leftMargin: minuteMetrics.tightBoundingRect.x
-        y: hourMetrics.tightBoundingRect.height - implicitHeight
+        id: amPm
+
+        anchors.left: parent.left
+        anchors.leftMargin: minuteMetrics.tightBoundingRect.width + Math.round(Tokens.spacing.large * root.heroScale)
+        anchors.bottom: parent.bottom
 
         active: Units.twelveHourClock
+        visible: active
         asynchronous: true
 
         sourceComponent: StyledRect {
             color: Colours.tPalette.m3surfaceContainerHigh
-            radius: Tokens.rounding.large
+            radius: Tokens.rounding.full
 
-            implicitWidth: minuteMetrics.tightBoundingRect.width
-            implicitHeight: amPmMetrics.tightBoundingRect.height + Tokens.padding.large * 2
+            implicitWidth: amPmText.implicitWidth + Tokens.padding.large * 2
+            implicitHeight: amPmText.implicitHeight + Tokens.padding.small * 2
 
             StyledText {
-                id: amPm
+                id: amPmText
 
                 anchors.centerIn: parent
-                width: amPmMetrics.tightBoundingRect.width
-                height: amPmMetrics.tightBoundingRect.height
-                transform: Translate {
-                    x: -amPmMetrics.tightBoundingRect.x
-                    y: -root.calcTopOff(amPmMetrics)
-                }
-
                 text: Time.amPmStr
                 color: Colours.palette.m3onSurface
-                font: Tokens.font.headline.builders.small.scale(2 * root.centerScale).width(30).build()
-
-                TextMetrics {
-                    id: amPmMetrics
-
-                    text: amPm.text
-                    font: amPm.font
-                }
+                font: Tokens.font.title.builders.large.scale(root.heroScale).weight(Font.DemiBold).build()
             }
         }
     }

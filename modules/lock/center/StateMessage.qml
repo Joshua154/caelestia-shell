@@ -151,7 +151,7 @@ Item {
         color: Colours.palette.m3onSurfaceVariant
 
         font: Tokens.font.body.small
-        horizontalAlignment: Qt.AlignHCenter
+        transformOrigin: Item.Left
         wrapMode: Text.WrapAtWordBoundaryOrAnywhere
         lineHeight: 1.2
 
@@ -177,7 +177,7 @@ Item {
         color: Colours.palette.m3error
 
         font: Tokens.font.body.small
-        horizontalAlignment: Qt.AlignHCenter
+        transformOrigin: Item.Left
         wrapMode: Text.WrapAtWordBoundaryOrAnywhere
 
         Connections {

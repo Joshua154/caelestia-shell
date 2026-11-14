@@ -2,7 +2,6 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import M3Shapes
-import Caelestia
 import Caelestia.Config
 import Caelestia.Multimedia
 import qs.components
@@ -13,22 +12,19 @@ import qs.utils
 Item {
     id: root
 
-    required property int centerWidth
+    required property int size
     readonly property color bgColour: Colours.tPalette.m3surfaceContainerHighest
 
-    implicitWidth: Math.round(centerWidth * 0.7)
-    implicitHeight: {
-        CUtils.dependency(shape.height); // Force update when shape height changes
-        return shape.pathBounds().height;
-    }
+    implicitWidth: size
+    implicitHeight: size
 
     MaterialShape {
         id: shape
 
         anchors.centerIn: parent
-        implicitSize: root.implicitWidth
+        implicitSize: root.size
 
-        shape: MaterialShape.ClamShell
+        shape: MaterialShape.Cookie9Sided
         color: Qt.alpha(root.bgColour, 1)
         opacity: root.bgColour.a
         layer.enabled: true
@@ -39,7 +35,7 @@ Item {
 
         text: "person"
         color: Colours.palette.m3onSurfaceVariant
-        fontStyle: Tokens.font.icon.size(root.centerWidth / 4).build()
+        fontStyle: Tokens.font.icon.size(Math.max(1, Math.round(root.size * 0.45))).build()
         visible: !pfp.ready
     }
 

@@ -3,6 +3,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Effects
 import Quickshell.Wayland
+import M3Shapes
 import Caelestia.Config
 import Caelestia.Multimedia
 import Caelestia.State
@@ -24,6 +25,7 @@ WlSessionLockSurface {
 
     Connections {
         function onUnlock(): void {
+            initAnim.stop();
             unlockAnim.start();
         }
 
@@ -35,19 +37,11 @@ WlSessionLockSurface {
 
         ParallelAnimation {
             Anim {
-                target: lockContent
-                properties: "implicitWidth,implicitHeight"
-                to: lockContent.size
-            }
-            Anim {
-                target: lockBg
-                property: "radius"
-                to: lockContent.radius
-            }
-            Anim {
                 target: content
-                property: "scale"
+                property: "reveal"
                 to: 0
+                duration: Tokens.anim.durations.normal
+                easing: Tokens.anim.standardAccel
             }
             Anim {
                 target: content
@@ -56,10 +50,16 @@ WlSessionLockSurface {
                 type: Anim.StandardSmall
             }
             Anim {
-                target: lockIcon
+                target: badge
+                property: "scale"
+                to: 1
+                type: Anim.FastSpatial
+            }
+            Anim {
+                target: badge
                 property: "opacity"
                 to: 1
-                type: Anim.StandardLarge
+                type: Anim.FastEffects
             }
             Anim {
                 target: background
@@ -69,13 +69,21 @@ WlSessionLockSurface {
             }
             SequentialAnimation {
                 PauseAnimation {
-                    duration: Tokens.anim.durations.small
+                    duration: Tokens.anim.durations.expressiveFastSpatial
                 }
-                Anim {
-                    type: Anim.Standard
-                    target: lockContent
-                    property: "opacity"
-                    to: 0
+                ParallelAnimation {
+                    Anim {
+                        target: badge
+                        property: "scale"
+                        to: 0
+                        type: Anim.StandardSmall
+                    }
+                    Anim {
+                        target: badge
+                        property: "opacity"
+                        to: 0
+                        type: Anim.StandardSmall
+                    }
                 }
             }
         }
@@ -100,13 +108,13 @@ WlSessionLockSurface {
         SequentialAnimation {
             ParallelAnimation {
                 Anim {
-                    target: lockContent
+                    target: badge
                     property: "scale"
                     to: 1
                     type: Anim.FastSpatial
                 }
                 Anim {
-                    target: lockContent
+                    target: badge
                     property: "rotation"
                     to: 360
                     duration: Tokens.anim.durations.expressiveFastSpatial
@@ -115,42 +123,27 @@ WlSessionLockSurface {
             }
             ParallelAnimation {
                 Anim {
-                    target: lockIcon
-                    property: "rotation"
-                    to: 360
-                    easing: Tokens.anim.standardDecel
+                    target: badge
+                    property: "scale"
+                    to: 0
+                    type: Anim.Standard
                 }
                 Anim {
-                    type: Anim.DefaultEffects
-                    target: lockIcon
+                    target: badge
                     property: "opacity"
                     to: 0
+                    type: Anim.DefaultEffects
                 }
                 Anim {
-                    type: Anim.DefaultEffects
                     target: content
                     property: "opacity"
                     to: 1
+                    type: Anim.DefaultEffects
                 }
                 Anim {
                     target: content
-                    property: "scale"
+                    property: "reveal"
                     to: 1
-                }
-                Anim {
-                    target: lockBg
-                    property: "radius"
-                    to: lockContent.Tokens.rounding.extraLarge * 1.5
-                }
-                Anim {
-                    target: lockContent
-                    property: "implicitWidth"
-                    to: (root.screen?.height ?? 0) * lockContent.Tokens.sizes.lock.heightMult * lockContent.Tokens.sizes.lock.ratio
-                }
-                Anim {
-                    target: lockContent
-                    property: "implicitHeight"
-                    to: (root.screen?.height ?? 0) * lockContent.Tokens.sizes.lock.heightMult
                 }
             }
         }
@@ -162,18 +155,40 @@ WlSessionLockSurface {
         anchors.fill: parent
         opacity: 0
 
-        layer.enabled: true
-        layer.effect: MultiEffect {
-            autoPaddingEnabled: false
-            blurEnabled: true
-            blur: 1
-            blurMax: 64
-            blurMultiplier: 1
+        Item {
+            anchors.fill: parent
+
+            layer.enabled: true
+            layer.effect: MultiEffect {
+                autoPaddingEnabled: false
+                blurEnabled: true
+                blur: 1
+                blurMax: 64
+                blurMultiplier: 1
+            }
+
+            Loader {
+                anchors.fill: parent
+                sourceComponent: Config.lock.useWallpaper ? wallpaperBackground : screencopyBackground
+            }
         }
 
-        Loader {
+        // Scrim so the content stays legible on any wallpaper, heavier behind the clock
+        Rectangle {
             anchors.fill: parent
-            sourceComponent: Config.lock.useWallpaper ? wallpaperBackground : screencopyBackground
+
+            gradient: Gradient {
+                orientation: Gradient.Horizontal
+
+                GradientStop {
+                    position: 0
+                    color: Qt.alpha(Colours.palette.m3surface, 0.8)
+                }
+                GradientStop {
+                    position: 1
+                    color: Qt.alpha(Colours.palette.m3surface, 0.5)
+                }
+            }
         }
     }
 
@@ -194,27 +209,36 @@ WlSessionLockSurface {
         }
     }
 
-    Item {
-        id: lockContent
+    Content {
+        id: content
 
-        readonly property int size: lockIcon.implicitHeight + Tokens.padding.large * 4
-        readonly property int radius: size / 4 * Tokens.rounding.scale
+        anchors.fill: parent
+        visible: Config.lock.enabled
+
+        lock: root
+        opacity: 0
+        reveal: 0
+    }
+
+    // Shown while locking and unlocking, in place of the content
+    Item {
+        id: badge
 
         anchors.centerIn: parent
-        implicitWidth: size
-        implicitHeight: size
+        implicitWidth: badgeShape.implicitSize
+        implicitHeight: badgeShape.implicitSize
 
         visible: Config.lock.enabled
         rotation: 180
         scale: 0
 
-        StyledRect {
-            id: lockBg
+        MaterialShape {
+            id: badgeShape
 
-            anchors.fill: parent
-            color: Colours.palette.m3surface
-            radius: parent.radius
-            opacity: Colours.transparency.enabled ? Colours.transparency.base : 1
+            anchors.centerIn: parent
+            implicitSize: lockIcon.implicitHeight + Tokens.padding.extraLarge * 4
+            shape: MaterialShape.Cookie12Sided
+            color: Colours.palette.m3primaryContainer
 
             layer.enabled: true
             layer.effect: MultiEffect {
@@ -228,21 +252,9 @@ WlSessionLockSurface {
             id: lockIcon
 
             anchors.centerIn: parent
-            text: "lock"
-            fontStyle: Tokens.font.icon.builders.extraLarge.scale(4).weight(Font.Bold).build()
-            rotation: 180
-        }
-
-        Content {
-            id: content
-
-            anchors.centerIn: parent
-            width: (root.screen?.height ?? 0) * Tokens.sizes.lock.heightMult * Tokens.sizes.lock.ratio - Tokens.padding.extraLargeIncreased
-            height: (root.screen?.height ?? 0) * Tokens.sizes.lock.heightMult - Tokens.padding.extraLargeIncreased
-
-            lock: root
-            opacity: 0
-            scale: 0
+            text: root.unlocking ? "lock_open" : "lock"
+            color: Colours.palette.m3onPrimaryContainer
+            fontStyle: Tokens.font.icon.builders.extraLarge.scale(3).weight(Font.Bold).build()
         }
     }
 }

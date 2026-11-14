@@ -1,23 +1,14 @@
 import QtQuick
+import QtQuick.Layouts
 import Caelestia.Config
+import Caelestia.I18n
 import qs.components
 import qs.services
-import qs.modules.lock.weather
 
-StyledRect {
+RowLayout {
     id: root
 
-    required property int rootHeight
-    readonly property bool showForecast: rootHeight >= Tokens.sizes.lock.showForecastHeight
-
-    implicitHeight: {
-        const base = brief.implicitHeight + brief.anchors.topMargin;
-        if (showForecast)
-            return base + Tokens.spacing.largeIncreased + forecast.implicitHeight + forecast.anchors.margins;
-        return base + brief.anchors.topMargin;
-    }
-    radius: Tokens.rounding.extraExtraLarge
-    color: Colours.tPalette.m3surfaceContainer
+    spacing: Tokens.spacing.large
 
     Timer {
         running: true
@@ -27,27 +18,44 @@ StyledRect {
         onTriggered: Weather.reload()
     }
 
-    BriefInfo {
-        id: brief
-
-        anchors.horizontalCenter: parent.horizontalCenter
-        anchors.top: parent.top
-        anchors.topMargin: Tokens.padding.extraLarge
-
-        rootHeight: root.rootHeight
+    MaterialIcon {
+        animate: true
+        text: Weather.icon
+        color: Colours.palette.m3secondary
+        fontStyle: Tokens.font.icon.builders.extraLarge.scale(1.4).build()
     }
 
-    Loader {
-        id: forecast
+    StyledText {
+        animate: true
+        text: Weather.temp
+        color: Colours.palette.m3primary
+        font: Tokens.font.headline.builders.large.weight(Font.DemiBold).width(80).build()
+    }
 
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.bottom: parent.bottom
-        anchors.margins: Tokens.padding.large
+    ColumnLayout {
+        Layout.fillWidth: true
+        spacing: 0
 
-        active: root.showForecast
-        asynchronous: true
+        StyledText {
+            Layout.fillWidth: true
+            animate: true
+            text: Weather.description
+            color: Colours.palette.m3onSurface
+            font: Tokens.font.title.medium
+            elide: Text.ElideRight
+        }
 
-        sourceComponent: Forecast {}
+        StyledText {
+            Layout.fillWidth: true
+            animate: true
+            text: {
+                const today = Weather.forecast[0];
+                // TRANSLATORS: %1/%2 = today's max and min temperature, units already included
+                return Tr.tr("High %1 • Low %2").arg(Weather.formatTemp(today?.maxTempC)).arg(Weather.formatTemp(today?.minTempC));
+            }
+            color: Colours.palette.m3onSurfaceVariant
+            font: Tokens.font.body.medium
+            elide: Text.ElideRight
+        }
     }
 }

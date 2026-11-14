@@ -12,7 +12,7 @@ import qs.modules.lock
 Item {
     id: root
 
-    required property real centerScale
+    required property real inputScale
     required property Pam pam
     readonly property alias placeholder: placeholder
     readonly property alias placeholderWidth: nonAnimPlaceholder.width
@@ -70,7 +70,7 @@ Item {
 
         animate: true
         color: root.pam.passwd.active ? Colours.palette.m3secondary : Colours.palette.m3outline
-        font: Tokens.font.body.builders.medium.scale(root.centerScale).width(110).build()
+        font: Tokens.font.body.builders.medium.scale(root.inputScale).width(110).build()
 
         opacity: root.buffer ? 0 : 1
 
