@@ -151,7 +151,8 @@ Item {
         color: Colours.palette.m3onSurfaceVariant
 
         font: Tokens.font.body.small
-        transformOrigin: Item.Left
+        transformOrigin: Item.Center
+        horizontalAlignment: Text.AlignHCenter
         wrapMode: Text.WrapAtWordBoundaryOrAnywhere
         lineHeight: 1.2
 
@@ -177,7 +178,8 @@ Item {
         color: Colours.palette.m3error
 
         font: Tokens.font.body.small
-        transformOrigin: Item.Left
+        transformOrigin: Item.Center
+        horizontalAlignment: Text.AlignHCenter
         wrapMode: Text.WrapAtWordBoundaryOrAnywhere
 
         Connections {

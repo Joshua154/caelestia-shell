@@ -8,29 +8,39 @@ import Caelestia.Services
 import qs.components.controls
 import qs.services
 
-RowLayout {
+GlassCard {
     id: root
 
-    spacing: Tokens.spacing.small
+    implicitWidth: layout.implicitWidth + Tokens.padding.small * 2
+    implicitHeight: layout.implicitHeight + Tokens.padding.small * 2
 
-    SessionButton {
-        icon: Config.session.icons.logout
-        command: Config.session.commands.logout
-    }
+    radius: Tokens.rounding.full
 
-    SessionButton {
-        icon: Config.session.icons.shutdown
-        command: Config.session.commands.shutdown
-    }
+    RowLayout {
+        id: layout
 
-    SessionButton {
-        icon: Config.session.icons.hibernate
-        command: Config.session.commands.hibernate
-    }
+        anchors.centerIn: parent
+        spacing: Tokens.spacing.extraSmall
 
-    SessionButton {
-        icon: Config.session.icons.reboot
-        command: Config.session.commands.reboot
+        SessionButton {
+            icon: Config.session.icons.logout
+            command: Config.session.commands.logout
+        }
+
+        SessionButton {
+            icon: Config.session.icons.hibernate
+            command: Config.session.commands.hibernate
+        }
+
+        SessionButton {
+            icon: Config.session.icons.reboot
+            command: Config.session.commands.reboot
+        }
+
+        SessionButton {
+            icon: Config.session.icons.shutdown
+            command: Config.session.commands.shutdown
+        }
     }
 
     component SessionButton: IconButton {
@@ -41,13 +51,12 @@ RowLayout {
                 Quickshell.execDetached(command);
         }
 
-        Layout.fillWidth: true
-
+        isRound: true
+        shapeMorph: true
         padding: Tokens.padding.medium
-        inactiveColour: Colours.tPalette.m3surfaceContainer
-        inactiveOnColour: Colours.palette.m3onSurface
-        radius: pressed ? Tokens.rounding.medium : Tokens.rounding.extraLarge
-        font: Tokens.font.icon.large
+        inactiveColour: "transparent"
+        inactiveOnColour: Colours.palette.m3onSurfaceVariant
+        font: Tokens.font.icon.medium
         onClicked: exec()
     }
 }

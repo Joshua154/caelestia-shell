@@ -1,0 +1,1153 @@
+diff --git a/modules/lock/Content.qml b/modules/lock/Content.qml
+index 47b6888d..d3c45574 100644
+--- a/modules/lock/Content.qml
++++ b/modules/lock/Content.qml
+@@ -1,12 +1,9 @@
+ pragma ComponentBehavior: Bound
+ 
+ import QtQuick
+-import QtQuick.Layouts
+ import Caelestia
+ import Caelestia.Config
+-import qs.components
+ import qs.services
+-import qs.modules.lock.weather
+ 
+ Item {
+     id: root
+@@ -16,87 +13,63 @@ Item {
+     // 0 = fully off screen, 1 = in place. Driven by the lock surface's animations
+     property real reveal: 1
+ 
+-    readonly property bool portrait: height > width
+-    readonly property int margin: Math.round(CUtils.clamp(height * 0.045, Tokens.padding.extraLarge, Tokens.padding.extraExtraLarge * 1.5))
+-    readonly property real slide: (1 - reveal) * Tokens.padding.extraExtraLarge * 2
++    readonly property int margin: Math.round(CUtils.clamp(height * 0.04, Tokens.padding.extraLarge, Tokens.padding.extraExtraLarge))
++    readonly property real slide: (1 - reveal) * Tokens.padding.extraExtraLarge
+ 
+     // Scale of the clock and login row, ~1 on a 1080p landscape screen
+-    readonly property real heroScale: Math.min(leftPane.height / 1000, leftPane.width / 640)
++    readonly property real heroScale: CUtils.clamp(Math.min(height / 1080, width / 1100), 0.5, 2)
+ 
+-    Item {
+-        id: leftPane
++    Hero {
++        id: hero
+ 
+-        anchors.left: parent.left
+-        anchors.top: parent.top
+-        anchors.margins: root.margin
+-        anchors.leftMargin: root.margin - root.slide
++        anchors.horizontalCenter: parent.horizontalCenter
++        anchors.verticalCenter: parent.verticalCenter
++        // Sits a touch above centre and rises into place while revealing
++        anchors.verticalCenterOffset: Math.round(-parent.height * 0.06 + root.slide)
+ 
+-        width: parent.width - root.margin * 2 - (root.portrait ? 0 : rail.width + root.margin)
+-        height: root.portrait ? Math.round((parent.height - root.margin * 3) * 0.6) : parent.height - root.margin * 2
++        width: Math.min(parent.width - root.margin * 2, Tokens.sizes.lock.centerWidth * Math.max(1, root.heroScale))
+ 
+-        WeatherInfo {
+-            anchors.left: parent.left
+-            anchors.top: parent.top
+-            width: Math.min(parent.width, implicitWidth)
+-        }
++        lock: root.lock
++        heroScale: root.heroScale
++    }
+ 
+-        Hero {
+-            anchors.left: parent.left
+-            anchors.bottom: parent.bottom
+-            width: Math.min(parent.width, Tokens.sizes.lock.centerWidth)
++    WeatherInfo {
++        anchors.left: parent.left
++        anchors.bottom: parent.bottom
++        anchors.margins: root.margin
++        anchors.bottomMargin: root.margin - root.slide
+ 
+-            lock: root.lock
+-            heroScale: root.heroScale
+-        }
++        width: Math.min(implicitWidth, parent.width * 0.3)
+     }
+ 
+-    ColumnLayout {
+-        id: rail
+-
++    Media {
+         anchors.right: parent.right
+         anchors.bottom: parent.bottom
+         anchors.margins: root.margin
+-        anchors.rightMargin: root.margin - root.slide
+-
+-        width: root.portrait ? parent.width - root.margin * 2 : Math.min(Tokens.sizes.sidebar.width, Math.round(parent.width * 0.32))
+-        height: parent.height - root.margin * 2 - (root.portrait ? leftPane.height + root.margin : 0)
+-
+-        spacing: Tokens.spacing.medium
++        anchors.bottomMargin: root.margin - root.slide
+ 
+-        Forecast {
+-            Layout.fillWidth: true
+-
+-            // Only when the rest of the rail keeps enough height for itself
+-            visible: rail.height - implicitHeight - rail.spacing >= Tokens.sizes.lock.showForecastHeight
+-        }
+-
+-        StyledRect {
+-            Layout.fillWidth: true
+-            Layout.fillHeight: true
+-
+-            radius: Tokens.rounding.extraLarge
+-            color: Colours.tPalette.m3surfaceContainer
++        width: Math.min(implicitWidth, parent.width * 0.3)
++        visible: Players.active !== null
++    }
+ 
+-            NotifDock {
+-                lock: root.lock
+-            }
+-        }
++    NotifDock {
++        anchors.horizontalCenter: parent.horizontalCenter
++        anchors.bottom: parent.bottom
++        anchors.bottomMargin: root.margin - root.slide
+ 
+-        Media {
+-            Layout.fillWidth: true
+-            visible: Players.active !== null
+-        }
++        width: Math.min(Tokens.sizes.notifs.width, parent.width - root.margin * 2)
++        // Room left between the login row and the bottom edge
++        maxHeight: parent.height - root.margin - (hero.y + hero.height)
+ 
+-        Fetch {
+-            Layout.fillWidth: true
++        lock: root.lock
++    }
+ 
+-            // Leave the room to the notifications on short screens
+-            compact: fullHeight > rail.height / 3
+-        }
++    SessionControls {
++        anchors.right: parent.right
++        anchors.top: parent.top
++        anchors.margins: root.margin
++        anchors.topMargin: root.margin - root.slide
+ 
+-        SessionControls {
+-            Layout.fillWidth: true
+-            visible: GlobalConfig.lock.enableSessionControls
+-        }
++        visible: GlobalConfig.lock.enableSessionControls
+     }
+ }
+diff --git a/modules/lock/Fetch.qml b/modules/lock/Fetch.qml
+deleted file mode 100644
+index d6a6a757..00000000
+--- a/modules/lock/Fetch.qml
++++ /dev/null
+@@ -1,235 +0,0 @@
+-pragma ComponentBehavior: Bound
+-
+-import QtQuick
+-import QtQuick.Layouts
+-import Quickshell.Services.UPower
+-import Caelestia.Config
+-import Caelestia.I18n
+-import Caelestia.Services
+-import qs.components
+-import qs.components.controls
+-import qs.components.effects
+-import qs.services
+-import qs.utils
+-
+-StyledRect {
+-    id: root
+-
+-    // Drops the logo and info lines, leaving only the meters
+-    property bool compact
+-
+-    readonly property real detailWidth: Math.max(cpuMeter.detailWidth, memMeter.detailWidth, diskMeter.detailWidth)
+-    // Height when not compact. Summed by hand so it doesn't depend on compact itself
+-    readonly property real fullHeight: header.implicitHeight + info.implicitHeight + meters.implicitHeight + meters.Layout.topMargin + layout.spacing * 2 + layout.anchors.margins * 2
+-
+-    implicitHeight: layout.implicitHeight + layout.anchors.margins * 2
+-    radius: Tokens.rounding.extraLarge
+-    color: Colours.tPalette.m3surfaceContainer
+-
+-    ServiceRef {
+-        service: Cpu
+-    }
+-
+-    ServiceRef {
+-        service: Memory
+-    }
+-
+-    ServiceRef {
+-        service: Storage
+-    }
+-
+-    ColumnLayout {
+-        id: layout
+-
+-        anchors.fill: parent
+-        anchors.margins: Tokens.padding.largeIncreased
+-
+-        spacing: Tokens.spacing.medium
+-
+-        RowLayout {
+-            id: header
+-
+-            Layout.fillWidth: true
+-            spacing: Tokens.spacing.medium
+-
+-            StyledRect {
+-                implicitWidth: prompt.implicitWidth + Tokens.padding.medium * 2
+-                implicitHeight: prompt.implicitHeight + Tokens.padding.small * 2
+-
+-                color: Colours.palette.m3primary
+-                radius: Tokens.rounding.medium
+-
+-                MonoText {
+-                    id: prompt
+-
+-                    anchors.centerIn: parent
+-                    text: ">"
+-                    color: Colours.palette.m3onPrimary
+-                }
+-            }
+-
+-            MonoText {
+-                Layout.fillWidth: true
+-                text: "caelestiafetch.sh"
+-                elide: Text.ElideRight
+-            }
+-        }
+-
+-        RowLayout {
+-            id: info
+-
+-            // Collapsed instead of hidden so its implicit height stays known for fullHeight
+-            Layout.fillWidth: true
+-            Layout.preferredHeight: root.compact ? 0 : implicitHeight
+-            Layout.topMargin: root.compact ? -layout.spacing : 0
+-            spacing: Tokens.spacing.extraLarge
+-            opacity: root.compact ? 0 : 1
+-
+-            Loader {
+-                Layout.fillHeight: true
+-                Layout.leftMargin: Tokens.padding.small
+-                Layout.preferredWidth: height
+-
+-                active: root.width > Tokens.sizes.lock.largeLogoWidth
+-                visible: active
+-                asynchronous: true
+-
+-                sourceComponent: SysInfo.isDefaultLogo ? caelestiaLogo : distroIcon
+-            }
+-
+-            ColumnLayout {
+-                Layout.fillWidth: true
+-                Layout.topMargin: Tokens.padding.extraSmall
+-                Layout.bottomMargin: Tokens.padding.extraSmall
+-                spacing: Tokens.spacing.small
+-
+-                Repeater {
+-                    model: {
+-                        const items = [];
+-
+-                        // TRANSLATORS: keep the label padded to 4 chars so the column stays aligned
+-                        items.push(Tr.tr("OS  : %1").arg(SysInfo.osPrettyName || SysInfo.osName));
+-                        // TRANSLATORS: keep the label padded to 4 chars so the column stays aligned
+-                        items.push(Tr.tr("WM  : %1").arg(SysInfo.wm));
+-                        // TRANSLATORS: keep the label padded to 4 chars so the column stays aligned
+-                        items.push(Tr.tr("UP  : %1").arg(SysInfo.uptime));
+-
+-                        if (UPower.displayDevice.isLaptopBattery) {
+-                            const charging = [UPowerDeviceState.Charging, UPowerDeviceState.FullyCharged, UPowerDeviceState.PendingCharge].includes(UPower.displayDevice.state);
+-                            const pct = Math.round(UPower.displayDevice.percentage * 100);
+-                            // TRANSLATORS: keep the label padded to 4 chars, (+) marks charging
+-                            items.push(charging ? Tr.tr("BATT: (+) %1%").arg(pct) : Tr.tr("BATT: %1%").arg(pct));
+-                        }
+-
+-                        return items;
+-                    }
+-
+-                    MonoText {
+-                        required property string modelData
+-
+-                        Layout.fillWidth: true
+-                        text: modelData
+-                        elide: Text.ElideRight
+-                    }
+-                }
+-            }
+-        }
+-
+-        ColumnLayout {
+-            id: meters
+-
+-            Layout.fillWidth: true
+-            Layout.topMargin: Tokens.spacing.extraSmall
+-            spacing: Tokens.spacing.small
+-
+-            Meter {
+-                id: cpuMeter
+-
+-                // TRANSLATORS: short label for CPU usage, at most 4 chars
+-                label: Tr.tr("CPU")
+-                value: Cpu.percentage
+-                detail: `${Strings.percentOne(Cpu.percentage)} ${Units.formatSensorTemp(Cpu.temperature)}`
+-                colour: Cpu.temperature > 90 ? Colours.palette.m3error : Colours.palette.m3primary
+-            }
+-
+-            Meter {
+-                id: memMeter
+-
+-                // TRANSLATORS: short label for memory usage, at most 4 chars
+-                label: Tr.tr("MEM")
+-                value: Memory.percentage
+-                detail: Strings.percentOne(Memory.percentage)
+-                colour: Colours.palette.m3tertiary
+-            }
+-
+-            Meter {
+-                id: diskMeter
+-
+-                // TRANSLATORS: short label for storage usage, at most 4 chars
+-                label: Tr.tr("DISK")
+-                value: Storage.percentage
+-                detail: Strings.percentOne(Storage.percentage)
+-                colour: Colours.palette.m3secondary
+-            }
+-        }
+-    }
+-
+-    Component {
+-        id: caelestiaLogo
+-
+-        Logo {
+-            width: height
+-        }
+-    }
+-
+-    Component {
+-        id: distroIcon
+-
+-        ColouredIcon {
+-            source: SysInfo.osLogo
+-            implicitSize: height
+-            colour: Colours.palette.m3primary
+-            layer.enabled: Config.lock.recolourLogo
+-        }
+-    }
+-
+-    component MonoText: StyledText {
+-        font: root.width > Tokens.sizes.lock.largeFontWidth ? Tokens.font.mono.medium : Tokens.font.mono.small
+-    }
+-
+-    component Meter: RowLayout {
+-        id: meter
+-
+-        required property string label
+-        required property real value
+-        required property string detail
+-        required property color colour
+-        readonly property alias detailWidth: detailText.implicitWidth
+-
+-        Layout.fillWidth: true
+-        spacing: Tokens.spacing.medium
+-
+-        MonoText {
+-            text: meter.label.padEnd(4)
+-            color: Colours.palette.m3onSurfaceVariant
+-        }
+-
+-        StyledProgressBar {
+-            Layout.fillWidth: true
+-            implicitHeight: Tokens.padding.small
+-
+-            value: meter.value
+-            fgColour: meter.colour
+-            bgColour: Colours.layer(Colours.palette.m3surfaceContainerHighest, 2)
+-        }
+-
+-        MonoText {
+-            id: detailText
+-
+-            // Same width for every meter so the bars line up
+-            Layout.preferredWidth: root.detailWidth
+-            text: meter.detail
+-            color: meter.colour
+-        }
+-    }
+-}
+diff --git a/modules/lock/Hero.qml b/modules/lock/Hero.qml
+index 6a71be42..20f835a7 100644
+--- a/modules/lock/Hero.qml
++++ b/modules/lock/Hero.qml
+@@ -12,39 +12,42 @@ Item {
+     required property var lock
+     required property real heroScale
+ 
+-    readonly property real authScale: CUtils.clamp(heroScale, 0.85, 1.2)
++    readonly property real authScale: CUtils.clamp(heroScale, 0.85, 1.15)
+ 
+     implicitWidth: layout.implicitWidth
+-    implicitHeight: layout.implicitHeight + layout.anchors.bottomMargin
++    // Reserve room for two lines of messages so nothing shifts when they appear
++    implicitHeight: layout.implicitHeight + stateMessage.anchors.topMargin + Math.ceil(messageMetrics.height * 2.4)
+ 
+     ColumnLayout {
+         id: layout
+ 
+-        anchors.left: parent.left
+-        anchors.right: parent.right
+-        anchors.bottom: parent.bottom
+-        // Reserve room for two lines of messages so the clock doesn't shift when they appear
+-        anchors.bottomMargin: Math.ceil(messageMetrics.height * 2.4) + stateMessage.anchors.topMargin
++        anchors.horizontalCenter: parent.horizontalCenter
++        anchors.top: parent.top
+ 
+         spacing: 0
+ 
+         Clock {
++            Layout.alignment: Qt.AlignHCenter
+             heroScale: root.heroScale
+         }
+ 
+         StyledText {
+-            Layout.topMargin: Math.round(Tokens.spacing.extraLarge * root.heroScale)
++            Layout.alignment: Qt.AlignHCenter
++            Layout.topMargin: Math.round(Tokens.spacing.small * root.heroScale)
+ 
+-            text: Time.format("dddd • d MMM").toUpperCase()
+-            color: Colours.palette.m3onSurface
+-            font: Tokens.font.title.builders.large.scale(root.authScale).weight(Font.DemiBold).build()
++            text: Time.format("dddd, d MMMM")
++            color: Colours.palette.m3onSurfaceVariant
++            font: Tokens.font.title.builders.large.scale(root.authScale).letterSpacing(1, true).build()
+         }
+ 
+         RowLayout {
++            Layout.alignment: Qt.AlignHCenter
+             Layout.topMargin: Math.round(Tokens.spacing.extraExtraLarge * root.heroScale)
+             spacing: Tokens.spacing.medium
+ 
+             ProfilePic {
++                id: pfp
++
+                 size: passwordInput.implicitHeight
+             }
+ 
+@@ -52,7 +55,7 @@ Item {
+                 id: passwordInput
+ 
+                 inputScale: root.authScale
+-                maxWidth: Math.min(root.width - x, Tokens.sizes.lock.centerWidth * 0.7 * root.authScale)
++                maxWidth: Math.min(root.width - pfp.width - parent.spacing, Tokens.sizes.lock.centerWidth * 0.6 * root.authScale)
+                 lock: root.lock
+             }
+         }
+@@ -70,7 +73,7 @@ Item {
+         anchors.left: parent.left
+         anchors.right: parent.right
+         anchors.top: layout.bottom
+-        anchors.topMargin: Tokens.spacing.medium
++        anchors.topMargin: Tokens.spacing.large
+ 
+         pam: root.lock.pam
+     }
+diff --git a/modules/lock/LockSurface.qml b/modules/lock/LockSurface.qml
+index 661ff92d..9f54b640 100644
+--- a/modules/lock/LockSurface.qml
++++ b/modules/lock/LockSurface.qml
+@@ -173,20 +173,20 @@ WlSessionLockSurface {
+             }
+         }
+ 
+-        // Scrim so the content stays legible on any wallpaper, heavier behind the clock
++        // Scrim so the content stays legible on any wallpaper, heavier towards the bottom
+         Rectangle {
+             anchors.fill: parent
+ 
+             gradient: Gradient {
+-                orientation: Gradient.Horizontal
++                orientation: Gradient.Vertical
+ 
+                 GradientStop {
+                     position: 0
+-                    color: Qt.alpha(Colours.palette.m3surface, 0.8)
++                    color: Qt.alpha(Colours.palette.m3surface, 0.45)
+                 }
+                 GradientStop {
+                     position: 1
+-                    color: Qt.alpha(Colours.palette.m3surface, 0.5)
++                    color: Qt.alpha(Colours.palette.m3surface, 0.7)
+                 }
+             }
+         }
+diff --git a/modules/lock/Media.qml b/modules/lock/Media.qml
+index 6c48b5e4..d0b4bce3 100644
+--- a/modules/lock/Media.qml
++++ b/modules/lock/Media.qml
+@@ -1,55 +1,28 @@
+ import QtQuick
+ import QtQuick.Layouts
+-import Quickshell
+-import Caelestia.Components
+ import Caelestia.Config
+ import Caelestia.I18n
+ import qs.components
+ import qs.components.controls
+-import qs.components.images
+ import qs.components.widgets
+ import qs.services
+ 
+-ClipRect {
++StyledRect {
+     id: root
+ 
+-    implicitHeight: layout.implicitHeight + layout.anchors.margins * 2
+-    radius: Tokens.rounding.extraLarge
+-    color: Colours.tPalette.m3surfaceContainer
+-
+-    FadeImage {
+-        anchors.fill: parent
+-        source: Players.getArtUrl(Players.active)
+-
+-        asynchronous: true
+-        fillMode: Image.PreserveAspectCrop
+-        sourceSize: {
+-            const dpr = (QsWindow.window as QsWindow)?.devicePixelRatio ?? 1;
+-            return Qt.size(width * dpr, height * dpr);
+-        }
++    implicitWidth: layout.implicitWidth + layout.anchors.leftMargin + layout.anchors.rightMargin
++    implicitHeight: layout.implicitHeight + layout.anchors.topMargin * 2
+ 
+-        layer.enabled: true
+-        opacity: status === Image.Ready ? 1 : 0
+-
+-        StyledRect {
+-            anchors.fill: parent
+-            color: Colours.palette.m3surface
+-            opacity: 0.8
+-        }
+-
+-        Behavior on opacity {
+-            Anim {
+-                type: Anim.StandardExtraLarge
+-            }
+-        }
+-    }
++    radius: Tokens.rounding.full
++    color: Colours.tPalette.m3surfaceContainer
+ 
+     RowLayout {
+         id: layout
+ 
+         anchors.fill: parent
+-        anchors.margins: Tokens.padding.large
+-        spacing: Tokens.spacing.large
++        anchors.margins: Tokens.padding.small
++        anchors.rightMargin: Tokens.padding.large
++        spacing: Tokens.spacing.medium
+ 
+         CoverArt {
+             implicitWidth: details.implicitHeight
+@@ -60,14 +33,14 @@ ClipRect {
+             id: details
+ 
+             Layout.fillWidth: true
+-            spacing: Tokens.spacing.extraSmall
++            spacing: 0
+ 
+             StyledText {
+                 Layout.fillWidth: true
+                 animate: true
+                 text: (Players.active?.trackTitle ?? Tr.tr("Nothing playing")) || Tr.tr("Unknown track")
+-                color: Colours.palette.m3primary
+-                font: Tokens.font.title.medium
++                color: Colours.palette.m3onSurface
++                font: Tokens.font.body.builders.large.weight(Font.Medium).build()
+                 elide: Text.ElideRight
+             }
+ 
+@@ -79,40 +52,17 @@ ClipRect {
+                 font: Tokens.font.body.small
+                 elide: Text.ElideRight
+             }
++        }
+ 
+-            ButtonRow {
+-                Layout.topMargin: Tokens.spacing.small
+-
+-                spacing: Tokens.spacing.extraSmall
+-
+-                IconButton {
+-                    type: IconButton.Tonal
+-                    icon: "skip_previous"
+-                    isRound: true
+-                    shapeMorph: true
+-                    disabled: !Players.active?.canGoPrevious
+-                    onClicked: Players.active?.previous()
+-                }
+-
+-                IconButton {
+-                    icon: Players.active?.isPlaying ? "pause" : "play_arrow"
+-                    isRound: true
+-                    shapeMorph: true
+-                    checked: Players.active?.isPlaying ?? false
+-                    disabled: !Players.active?.canTogglePlaying
+-                    onClicked: Players.active?.togglePlaying()
+-                    implicitWidth: implicitHeight + Tokens.padding.largeIncreased * 2
+-                }
+-
+-                IconButton {
+-                    type: IconButton.Tonal
+-                    icon: "skip_next"
+-                    isRound: true
+-                    shapeMorph: true
+-                    disabled: !Players.active?.canGoNext
+-                    onClicked: Players.active?.next()
+-                }
+-            }
++        IconButton {
++            Layout.leftMargin: Tokens.spacing.small
++            type: IconButton.Tonal
++            isRound: true
++            shapeMorph: true
++            icon: Players.active?.isPlaying ? "pause" : "play_arrow"
++            checked: Players.active?.isPlaying ?? false
++            disabled: !Players.active?.canTogglePlaying
++            onClicked: Players.active?.togglePlaying()
+         }
+     }
+ }
+diff --git a/modules/lock/NotifDock.qml b/modules/lock/NotifDock.qml
+index 35359352..1c07c30e 100644
+--- a/modules/lock/NotifDock.qml
++++ b/modules/lock/NotifDock.qml
+@@ -3,82 +3,53 @@ pragma ComponentBehavior: Bound
+ import QtQuick
+ import QtQuick.Layouts
+ import Quickshell
+-import Quickshell.Widgets
+ import Caelestia.Config
+ import Caelestia.I18n
+ import qs.components
+ import qs.components.containers
+-import qs.components.effects
+ import qs.services
+-import qs.utils
+ 
+-ColumnLayout {
++Item {
+     id: root
+ 
+     required property var lock
++    // Vertical room the dock may take up, pill included
++    required property real maxHeight
+ 
+-    anchors.fill: parent
+-    anchors.margins: Tokens.padding.large
++    readonly property int count: Notifs.list.length
++    readonly property bool canExpand: count > 0 && !Config.lock.hideNotifs
++    property bool expanded
+ 
+-    spacing: Tokens.spacing.medium
++    implicitHeight: pill.implicitHeight + panel.height + (panel.height > 0 ? panel.anchors.bottomMargin : 0)
++    visible: count > 0
+ 
+-    StyledText {
+-        Layout.fillWidth: true
+-        text: Notifs.list.length > 0 ? Tr.trN("%n notification", "%n notifications", Notifs.list.length) : Tr.tr("Notifications")
+-        color: Colours.palette.m3outline
+-        font: Tokens.font.mono.builders.small.weight(Font.Medium).build()
+-        elide: Text.ElideRight
++    onCanExpandChanged: {
++        if (!canExpand)
++            expanded = false;
+     }
+ 
+     ClipRect {
+-        id: clipRect
++        id: panel
+ 
+-        Layout.fillWidth: true
+-        Layout.fillHeight: true
++        anchors.left: parent.left
++        anchors.right: parent.right
++        anchors.bottom: pill.top
++        anchors.bottomMargin: Tokens.spacing.medium
+ 
+-        radius: Tokens.rounding.medium
+-        color: "transparent"
++        height: root.expanded ? Math.max(0, Math.min(list.contentHeight + list.anchors.margins * 2, root.maxHeight - pill.implicitHeight - anchors.bottomMargin)) : 0
++        radius: Tokens.rounding.extraLarge
++        color: Colours.tPalette.m3surfaceContainer
+ 
+-        Loader {
+-            asynchronous: true
+-            anchors.centerIn: parent
+-            active: opacity > 0
+-            opacity: Notifs.list.length > 0 && !Config.lock.hideNotifs ? 0 : 1
+-
+-            sourceComponent: ColumnLayout {
+-                spacing: Tokens.spacing.largeIncreased
+-
+-                Image {
+-                    asynchronous: true
+-                    source: Paths.absolutePath(Config.paths.lockNoNotifsPic)
+-                    fillMode: Image.PreserveAspectFit
+-                    sourceSize.width: clipRect.width * 0.8 * ((QsWindow.window as QsWindow)?.devicePixelRatio ?? 1)
+-
+-                    layer.enabled: true
+-                    layer.effect: Colouriser {
+-                        colorizationColor: Colours.palette.m3outlineVariant
+-                        brightness: 1
+-                    }
+-                }
+-
+-                StyledText {
+-                    Layout.alignment: Qt.AlignHCenter
+-                    text: Config.lock.hideNotifs ? Tr.tr("Unlock for notifications") : Tr.tr("No notifications")
+-                    color: Colours.palette.m3outlineVariant
+-                    font: Tokens.font.mono.builders.large.weight(Font.Medium).build()
+-                }
+-            }
+-
+-            Behavior on opacity {
+-                Anim {
+-                    type: Anim.StandardExtraLarge
+-                }
+-            }
++        Behavior on height {
++            Anim {}
+         }
+ 
+         StyledListView {
++            id: list
++
+             anchors.fill: parent
+-            visible: !Config.lock.hideNotifs
++            anchors.margins: Tokens.padding.medium
++
+             spacing: Tokens.spacing.small
+             clip: true
+ 
+@@ -140,4 +111,54 @@ ColumnLayout {
+             }
+         }
+     }
++
++    StyledRect {
++        id: pill
++
++        anchors.horizontalCenter: parent.horizontalCenter
++        anchors.bottom: parent.bottom
++
++        implicitWidth: pillLayout.implicitWidth + Tokens.padding.large * 2
++        implicitHeight: pillLayout.implicitHeight + Tokens.padding.medium * 2
++
++        radius: Tokens.rounding.full
++        color: Colours.tPalette.m3surfaceContainer
++
++        StateLayer {
++            radius: parent.radius
++            disabled: !root.canExpand
++            onClicked: root.expanded = !root.expanded
++        }
++
++        RowLayout {
++            id: pillLayout
++
++            anchors.centerIn: parent
++            spacing: Tokens.spacing.small
++
++            MaterialIcon {
++                text: "notifications"
++                color: Colours.palette.m3onSurfaceVariant
++                fill: 1
++            }
++
++            StyledText {
++                animate: true
++                text: Config.lock.hideNotifs ? Tr.tr("Unlock for notifications") : Tr.trN("%n notification", "%n notifications", root.count)
++                color: Colours.palette.m3onSurface
++                font: Tokens.font.body.medium
++            }
++
++            MaterialIcon {
++                visible: root.canExpand
++                text: "expand_less"
++                color: Colours.palette.m3onSurfaceVariant
++                rotation: root.expanded ? 180 : 0
++
++                Behavior on rotation {
++                    Anim {}
++                }
++            }
++        }
++    }
+ }
+diff --git a/modules/lock/SessionControls.qml b/modules/lock/SessionControls.qml
+index 3939ca49..3728381e 100644
+--- a/modules/lock/SessionControls.qml
++++ b/modules/lock/SessionControls.qml
+@@ -18,11 +18,6 @@ RowLayout {
+         command: Config.session.commands.logout
+     }
+ 
+-    SessionButton {
+-        icon: Config.session.icons.shutdown
+-        command: Config.session.commands.shutdown
+-    }
+-
+     SessionButton {
+         icon: Config.session.icons.hibernate
+         command: Config.session.commands.hibernate
+@@ -33,6 +28,11 @@ RowLayout {
+         command: Config.session.commands.reboot
+     }
+ 
++    SessionButton {
++        icon: Config.session.icons.shutdown
++        command: Config.session.commands.shutdown
++    }
++
+     component SessionButton: IconButton {
+         required property list<string> command
+ 
+@@ -41,13 +41,12 @@ RowLayout {
+                 Quickshell.execDetached(command);
+         }
+ 
+-        Layout.fillWidth: true
+-
++        isRound: true
++        shapeMorph: true
+         padding: Tokens.padding.medium
+         inactiveColour: Colours.tPalette.m3surfaceContainer
+-        inactiveOnColour: Colours.palette.m3onSurface
+-        radius: pressed ? Tokens.rounding.medium : Tokens.rounding.extraLarge
+-        font: Tokens.font.icon.large
++        inactiveOnColour: Colours.palette.m3onSurfaceVariant
++        font: Tokens.font.icon.medium
+         onClicked: exec()
+     }
+ }
+diff --git a/modules/lock/WeatherInfo.qml b/modules/lock/WeatherInfo.qml
+index 6b4217dd..62848cda 100644
+--- a/modules/lock/WeatherInfo.qml
++++ b/modules/lock/WeatherInfo.qml
+@@ -8,7 +8,7 @@ import qs.services
+ RowLayout {
+     id: root
+ 
+-    spacing: Tokens.spacing.large
++    spacing: Tokens.spacing.medium
+ 
+     Timer {
+         running: true
+@@ -19,29 +19,30 @@ RowLayout {
+     }
+ 
+     MaterialIcon {
++        Layout.alignment: Qt.AlignTop
+         animate: true
+         text: Weather.icon
+-        color: Colours.palette.m3secondary
+-        fontStyle: Tokens.font.icon.builders.extraLarge.scale(1.4).build()
+-    }
+-
+-    StyledText {
+-        animate: true
+-        text: Weather.temp
+-        color: Colours.palette.m3primary
+-        font: Tokens.font.headline.builders.large.weight(Font.DemiBold).width(80).build()
++        color: Colours.palette.m3onSurface
++        fontStyle: Tokens.font.icon.builders.extraLarge.scale(1.2).build()
+     }
+ 
+     ColumnLayout {
+         Layout.fillWidth: true
+         spacing: 0
+ 
++        StyledText {
++            animate: true
++            text: Weather.temp
++            color: Colours.palette.m3onSurface
++            font: Tokens.font.headline.builders.small.weight(Font.Medium).build()
++        }
++
+         StyledText {
+             Layout.fillWidth: true
+             animate: true
+             text: Weather.description
+-            color: Colours.palette.m3onSurface
+-            font: Tokens.font.title.medium
++            color: Colours.palette.m3onSurfaceVariant
++            font: Tokens.font.body.medium
+             elide: Text.ElideRight
+         }
+ 
+@@ -53,8 +54,8 @@ RowLayout {
+                 // TRANSLATORS: %1/%2 = today's max and min temperature, units already included
+                 return Tr.tr("High %1 • Low %2").arg(Weather.formatTemp(today?.maxTempC)).arg(Weather.formatTemp(today?.minTempC));
+             }
+-            color: Colours.palette.m3onSurfaceVariant
+-            font: Tokens.font.body.medium
++            color: Colours.palette.m3outline
++            font: Tokens.font.body.small
+             elide: Text.ElideRight
+         }
+     }
+diff --git a/modules/lock/center/Clock.qml b/modules/lock/center/Clock.qml
+index 35a46516..ee35f1c1 100644
+--- a/modules/lock/center/Clock.qml
++++ b/modules/lock/center/Clock.qml
+@@ -1,5 +1,3 @@
+-pragma ComponentBehavior: Bound
+-
+ import QtQuick
+ import Caelestia.Config
+ import Caelestia.I18n
+@@ -11,84 +9,30 @@ Item {
+ 
+     required property real heroScale
+ 
+-    readonly property font clockFont: Tokens.font.headline.builders.large.scale(8 * heroScale).width(62).weight(Font.DemiBold).build()
+-    readonly property real digitHeight: digitMetrics.tightBoundingRect.height
+-    readonly property real topOff: digitMetrics.tightBoundingRect.y - digitMetrics.boundingRect.y
+-    readonly property int lineGap: Math.round(Tokens.spacing.largeIncreased * heroScale)
+-
+-    implicitWidth: Math.max(hourMetrics.tightBoundingRect.width, minuteMetrics.tightBoundingRect.width + (amPm.active ? amPm.width + amPm.anchors.leftMargin : 0))
+-    implicitHeight: digitHeight * 2 + lineGap
+-
+-    // Fixed reference so the layout doesn't jitter as the digits change
+-    TextMetrics {
+-        id: digitMetrics
+-
+-        text: "0"
+-        font: root.clockFont
+-    }
++    implicitWidth: time.implicitWidth + (amPm.visible ? amPm.implicitWidth + amPm.anchors.leftMargin : 0)
++    implicitHeight: time.implicitHeight
+ 
+     StyledText {
+-        id: hours
++        id: time
+ 
+-        x: -hourMetrics.tightBoundingRect.x
+-        y: -root.topOff
+-
+-        text: Time.hourStr
+-        color: Colours.palette.m3primary
+-        font: root.clockFont
+-
+-        TextMetrics {
+-            id: hourMetrics
++        anchors.left: parent.left
++        anchors.top: parent.top
+ 
+-            text: hours.text
+-            font: hours.font
+-        }
++        text: `${Time.hourStr}:${Time.minuteStr}`
++        color: Colours.palette.m3onSurface
++        font: Tokens.font.clock.size(Math.max(1, Math.round(120 * root.heroScale))).weight(Font.Light).letterSpacing(-Math.round(2 * root.heroScale), true).build()
+     }
+ 
+     StyledText {
+-        id: minutes
+-
+-        x: -minuteMetrics.tightBoundingRect.x
+-        y: root.digitHeight + root.lineGap - root.topOff
+-
+-        text: Time.minuteStr
+-        color: Colours.palette.m3secondary
+-        font: root.clockFont
+-
+-        TextMetrics {
+-            id: minuteMetrics
+-
+-            text: minutes.text
+-            font: minutes.font
+-        }
+-    }
+-
+-    Loader {
+         id: amPm
+ 
+-        anchors.left: parent.left
+-        anchors.leftMargin: minuteMetrics.tightBoundingRect.width + Math.round(Tokens.spacing.large * root.heroScale)
+-        anchors.bottom: parent.bottom
+-
+-        active: Units.twelveHourClock
+-        visible: active
+-        asynchronous: true
+-
+-        sourceComponent: StyledRect {
+-            color: Colours.tPalette.m3surfaceContainerHigh
+-            radius: Tokens.rounding.full
+-
+-            implicitWidth: amPmText.implicitWidth + Tokens.padding.large * 2
+-            implicitHeight: amPmText.implicitHeight + Tokens.padding.small * 2
+-
+-            StyledText {
+-                id: amPmText
++        anchors.left: time.right
++        anchors.leftMargin: Math.round(Tokens.spacing.medium * root.heroScale)
++        anchors.baseline: time.baseline
+ 
+-                anchors.centerIn: parent
+-                text: Time.amPmStr
+-                color: Colours.palette.m3onSurface
+-                font: Tokens.font.title.builders.large.scale(root.heroScale).weight(Font.DemiBold).build()
+-            }
+-        }
++        visible: Units.twelveHourClock
++        text: Time.amPmStr
++        color: Colours.palette.m3onSurfaceVariant
++        font: Tokens.font.clock.size(Math.max(1, Math.round(28 * root.heroScale))).weight(Font.Medium).build()
+     }
+ }
+diff --git a/modules/lock/center/StateMessage.qml b/modules/lock/center/StateMessage.qml
+index ebfff509..0d0d5dd5 100644
+--- a/modules/lock/center/StateMessage.qml
++++ b/modules/lock/center/StateMessage.qml
+@@ -151,7 +151,8 @@ Item {
+         color: Colours.palette.m3onSurfaceVariant
+ 
+         font: Tokens.font.body.small
+-        transformOrigin: Item.Left
++        transformOrigin: Item.Center
++        horizontalAlignment: Text.AlignHCenter
+         wrapMode: Text.WrapAtWordBoundaryOrAnywhere
+         lineHeight: 1.2
+ 
+@@ -177,7 +178,8 @@ Item {
+         color: Colours.palette.m3error
+ 
+         font: Tokens.font.body.small
+-        transformOrigin: Item.Left
++        transformOrigin: Item.Center
++        horizontalAlignment: Text.AlignHCenter
+         wrapMode: Text.WrapAtWordBoundaryOrAnywhere
+ 
+         Connections {
+diff --git a/modules/lock/weather/Forecast.qml b/modules/lock/weather/Forecast.qml
+deleted file mode 100644
+index dc515188..00000000
+--- a/modules/lock/weather/Forecast.qml
++++ /dev/null
+@@ -1,107 +0,0 @@
+-import QtQuick
+-import QtQuick.Layouts
+-import M3Shapes
+-import Caelestia
+-import Caelestia.Config
+-import Caelestia.I18n
+-import qs.components
+-import qs.services
+-import qs.utils
+-
+-StyledRect {
+-    id: root
+-
+-    color: Colours.layer(Colours.palette.m3surfaceContainerHigh, 2)
+-    radius: Tokens.rounding.extraLargeIncreased
+-    implicitHeight: header.anchors.margins + header.implicitHeight + Tokens.spacing.medium + layout.implicitHeight + layout.anchors.bottomMargin
+-
+-    RowLayout {
+-        id: header
+-
+-        anchors.left: parent.left
+-        anchors.top: parent.top
+-        anchors.margins: Tokens.padding.largeIncreased
+-
+-        spacing: Tokens.spacing.small
+-
+-        MaterialIcon {
+-            Layout.topMargin: Math.round(fontInfo.pointSize * 0.12)
+-            text: "schedule"
+-            fontStyle: Tokens.font.icon.builders.medium.weight(title.font.weight).build()
+-        }
+-
+-        StyledText {
+-            id: title
+-
+-            text: Tr.tr("Hourly forecast")
+-            font: Tokens.font.title.medium
+-        }
+-    }
+-
+-    RowLayout {
+-        id: layout
+-
+-        anchors.left: parent.left
+-        anchors.right: parent.right
+-        anchors.bottom: parent.bottom
+-        anchors.bottomMargin: Tokens.padding.largeIncreased
+-        anchors.margins: Tokens.padding.large
+-
+-        spacing: Tokens.spacing.small
+-
+-        Repeater {
+-            model: CUtils.clamp(Math.floor((layout.width + layout.spacing) / (Tokens.sizes.lock.forecastItemWidth + layout.spacing)), 0, Weather.hourlyForecast.length)
+-
+-            ColumnLayout {
+-                id: hour
+-
+-                required property int index
+-                readonly property var cond: Weather.hourlyForecast[index]
+-
+-                Layout.fillWidth: true
+-                spacing: Tokens.spacing.extraSmall
+-
+-                MaterialShape {
+-                    Layout.alignment: Qt.AlignHCenter
+-                    implicitSize: temp.implicitHeight + Tokens.padding.medium * 2
+-                    shape: MaterialShape.Cookie4Sided
+-                    color: Qt.alpha(Colours.palette.m3primary, hour.index === 0 ? 1 : 0)
+-
+-                    Behavior on color {
+-                        CAnim {}
+-                    }
+-
+-                    StyledText {
+-                        id: temp
+-
+-                        anchors.centerIn: parent
+-                        text: Weather.formatTemp(hour.cond.tempC, true)
+-                        color: hour.index === 0 ? Colours.palette.m3onPrimary : Colours.palette.m3onSurface
+-                        font: Tokens.font.title.medium
+-                    }
+-                }
+-
+-                MaterialIcon {
+-                    Layout.alignment: Qt.AlignHCenter
+-                    text: hour.cond.icon
+-                    color: Colours.palette.m3secondary
+-                    fontStyle: Tokens.font.icon.large
+-                }
+-
+-                StyledText {
+-                    Layout.alignment: Qt.AlignHCenter
+-                    text: Strings.percent(hour.cond.precipChance)
+-                    color: Colours.palette.m3primary
+-                }
+-
+-                StyledText {
+-                    Layout.topMargin: Tokens.spacing.extraSmall
+-                    Layout.alignment: Qt.AlignHCenter
+-                    text: hour.index === 0 ? Tr.trCtx("Now", "forecast column") : Tr.formatDateTime(new Date(hour.cond.timestamp.replace("T", " ")), Units.twelveHourClock ? "ha" : "hh:00")
+-                    color: Colours.palette.m3onSurfaceVariant
+-                    font: Tokens.font.body.medium
+-                }
+-            }
+-        }
+-    }
+-}

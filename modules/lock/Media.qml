@@ -1,117 +1,115 @@
 import QtQuick
 import QtQuick.Layouts
-import Quickshell
-import Caelestia.Components
 import Caelestia.Config
 import Caelestia.I18n
 import qs.components
 import qs.components.controls
-import qs.components.images
 import qs.components.widgets
 import qs.services
 
-ClipRect {
+GlassCard {
     id: root
 
-    implicitHeight: layout.implicitHeight + layout.anchors.margins * 2
-    radius: Tokens.rounding.extraLarge
-    color: Colours.tPalette.m3surfaceContainer
+    property real progress: {
+        const active = Players.active;
+        return active?.length ? (active.position % active.length) / active.length : 0;
+    }
 
-    FadeImage {
-        anchors.fill: parent
-        source: Players.getArtUrl(Players.active)
+    implicitWidth: layout.implicitWidth + Tokens.padding.large * 2
+    implicitHeight: layout.implicitHeight + Tokens.padding.large * 2
 
-        asynchronous: true
-        fillMode: Image.PreserveAspectCrop
-        sourceSize: {
-            const dpr = (QsWindow.window as QsWindow)?.devicePixelRatio ?? 1;
-            return Qt.size(width * dpr, height * dpr);
-        }
-
-        layer.enabled: true
-        opacity: status === Image.Ready ? 1 : 0
-
-        StyledRect {
-            anchors.fill: parent
-            color: Colours.palette.m3surface
-            opacity: 0.8
-        }
-
-        Behavior on opacity {
-            Anim {
-                type: Anim.StandardExtraLarge
-            }
+    Behavior on progress {
+        Anim {
+            type: Anim.StandardLarge
         }
     }
 
-    RowLayout {
+    Timer {
+        running: Players.active?.isPlaying ?? false
+        interval: GlobalConfig.dashboard.mediaUpdateInterval
+        triggeredOnStart: true
+        repeat: true
+        onTriggered: Players.active?.positionChanged()
+    }
+
+    ColumnLayout {
         id: layout
 
         anchors.fill: parent
         anchors.margins: Tokens.padding.large
-        spacing: Tokens.spacing.large
+        spacing: Tokens.spacing.medium
 
-        CoverArt {
-            implicitWidth: details.implicitHeight
-            implicitHeight: details.implicitHeight
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: Tokens.spacing.large
+
+            CoverArt {
+                implicitWidth: TokenConfig.sizes.notifs.image
+                implicitHeight: TokenConfig.sizes.notifs.image
+            }
+
+            ColumnLayout {
+                id: details
+
+                Layout.fillWidth: true
+                spacing: Tokens.spacing.extraSmall / 2
+
+                StyledText {
+                    animate: true
+                    text: Players.active?.isPlaying ? Tr.tr("Now playing") : Tr.tr("Paused")
+                    color: Colours.palette.m3primary
+                    font: Tokens.font.label.builders.small.weight(Font.Medium).letterSpacing(2, true).capitalisation(Font.AllUppercase).build()
+                }
+
+                StyledText {
+                    Layout.fillWidth: true
+                    animate: true
+                    text: (Players.active?.trackTitle ?? Tr.tr("Nothing playing")) || Tr.tr("Unknown track")
+                    color: Colours.palette.m3onSurface
+                    font: Tokens.font.body.builders.large.weight(Font.Medium).build()
+                    elide: Text.ElideRight
+                }
+
+                StyledText {
+                    Layout.fillWidth: true
+                    animate: true
+                    text: (Players.active?.trackArtist ?? Tr.tr("Try playing some music!")) || Tr.tr("Unknown artist")
+                    color: Colours.palette.m3onSurfaceVariant
+                    font: Tokens.font.body.small
+                    elide: Text.ElideRight
+                }
+            }
+
+            IconButton {
+                Layout.leftMargin: Tokens.spacing.small
+                type: IconButton.Tonal
+                isRound: true
+                shapeMorph: true
+                icon: Players.active?.isPlaying ? "pause" : "play_arrow"
+                checked: Players.active?.isPlaying ?? false
+                disabled: !Players.active?.canTogglePlaying
+                onClicked: Players.active?.togglePlaying()
+            }
         }
 
-        ColumnLayout {
-            id: details
-
+        // Hairline progress track
+        Item {
             Layout.fillWidth: true
-            spacing: Tokens.spacing.extraSmall
+            implicitHeight: 3
 
-            StyledText {
-                Layout.fillWidth: true
-                animate: true
-                text: (Players.active?.trackTitle ?? Tr.tr("Nothing playing")) || Tr.tr("Unknown track")
+            Rectangle {
+                anchors.fill: parent
+                radius: Tokens.rounding.full
+                color: Qt.alpha(Colours.palette.m3outlineVariant, 0.5)
+            }
+
+            Rectangle {
+                anchors.left: parent.left
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                width: Math.round(parent.width * root.progress)
+                radius: Tokens.rounding.full
                 color: Colours.palette.m3primary
-                font: Tokens.font.title.medium
-                elide: Text.ElideRight
-            }
-
-            StyledText {
-                Layout.fillWidth: true
-                animate: true
-                text: (Players.active?.trackArtist ?? Tr.tr("Try playing some music!")) || Tr.tr("Unknown artist")
-                color: Colours.palette.m3onSurfaceVariant
-                font: Tokens.font.body.small
-                elide: Text.ElideRight
-            }
-
-            ButtonRow {
-                Layout.topMargin: Tokens.spacing.small
-
-                spacing: Tokens.spacing.extraSmall
-
-                IconButton {
-                    type: IconButton.Tonal
-                    icon: "skip_previous"
-                    isRound: true
-                    shapeMorph: true
-                    disabled: !Players.active?.canGoPrevious
-                    onClicked: Players.active?.previous()
-                }
-
-                IconButton {
-                    icon: Players.active?.isPlaying ? "pause" : "play_arrow"
-                    isRound: true
-                    shapeMorph: true
-                    checked: Players.active?.isPlaying ?? false
-                    disabled: !Players.active?.canTogglePlaying
-                    onClicked: Players.active?.togglePlaying()
-                    implicitWidth: implicitHeight + Tokens.padding.largeIncreased * 2
-                }
-
-                IconButton {
-                    type: IconButton.Tonal
-                    icon: "skip_next"
-                    isRound: true
-                    shapeMorph: true
-                    disabled: !Players.active?.canGoNext
-                    onClicked: Players.active?.next()
-                }
             }
         }
     }

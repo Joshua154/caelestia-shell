@@ -6,6 +6,7 @@ import M3Shapes
 import Caelestia.Config
 import qs.components
 import qs.components.controls
+import qs.components.effects
 import qs.services
 
 StyledRect {
@@ -26,6 +27,21 @@ StyledRect {
 
     color: Colours.tPalette.m3surfaceContainer
     radius: Tokens.rounding.full
+
+    // Hairline edge that warms up to the accent while typing
+    border.width: 1
+    border.color: lock.pam.buffer ? Qt.alpha(Colours.palette.m3primary, 0.55) : Qt.alpha(Colours.palette.m3outlineVariant, 0.35)
+
+    Behavior on border.color {
+        CAnim {}
+    }
+
+    Elevation {
+        z: -1
+        anchors.fill: parent
+        radius: parent.radius
+        level: 3
+    }
 
     focus: true
     onActiveFocusChanged: {

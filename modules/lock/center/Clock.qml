@@ -1,9 +1,9 @@
-pragma ComponentBehavior: Bound
-
 import QtQuick
+import QtQuick.Effects
 import Caelestia.Config
 import Caelestia.I18n
 import qs.components
+import qs.components.effects
 import qs.services
 
 Item {
@@ -11,84 +11,103 @@ Item {
 
     required property real heroScale
 
-    readonly property font clockFont: Tokens.font.headline.builders.large.scale(8 * heroScale).width(62).weight(Font.DemiBold).build()
-    readonly property real digitHeight: digitMetrics.tightBoundingRect.height
-    readonly property real topOff: digitMetrics.tightBoundingRect.y - digitMetrics.boundingRect.y
-    readonly property int lineGap: Math.round(Tokens.spacing.largeIncreased * heroScale)
+    readonly property font timeFont: Tokens.font.clock.size(Math.max(1, Math.round(136 * heroScale))).weight(Font.Normal).letterSpacing(-Math.round(5 * heroScale), true).build()
 
-    implicitWidth: Math.max(hourMetrics.tightBoundingRect.width, minuteMetrics.tightBoundingRect.width + (amPm.active ? amPm.width + amPm.anchors.leftMargin : 0))
-    implicitHeight: digitHeight * 2 + lineGap
+    implicitWidth: timeRow.implicitWidth + (amPm.visible ? amPm.implicitWidth + amPm.anchors.leftMargin : 0)
+    implicitHeight: timeRow.implicitHeight
 
-    // Fixed reference so the layout doesn't jitter as the digits change
-    TextMetrics {
-        id: digitMetrics
-
-        text: "0"
-        font: root.clockFont
+    // Soft halo in the accent colour so the time floats off the wallpaper
+    layer.enabled: true
+    layer.effect: MultiEffect {
+        shadowEnabled: true
+        shadowBlur: 1
+        blurMax: 48
+        shadowColor: Colours.palette.m3primary
+        shadowOpacity: 0.45
+        shadowVerticalOffset: 0
     }
 
-    StyledText {
-        id: hours
-
-        x: -hourMetrics.tightBoundingRect.x
-        y: -root.topOff
-
-        text: Time.hourStr
-        color: Colours.palette.m3primary
-        font: root.clockFont
-
-        TextMetrics {
-            id: hourMetrics
-
-            text: hours.text
-            font: hours.font
-        }
-    }
-
-    StyledText {
-        id: minutes
-
-        x: -minuteMetrics.tightBoundingRect.x
-        y: root.digitHeight + root.lineGap - root.topOff
-
-        text: Time.minuteStr
-        color: Colours.palette.m3secondary
-        font: root.clockFont
-
-        TextMetrics {
-            id: minuteMetrics
-
-            text: minutes.text
-            font: minutes.font
-        }
-    }
-
-    Loader {
-        id: amPm
+    Row {
+        id: timeRow
 
         anchors.left: parent.left
-        anchors.leftMargin: minuteMetrics.tightBoundingRect.width + Math.round(Tokens.spacing.large * root.heroScale)
-        anchors.bottom: parent.bottom
+        anchors.top: parent.top
+        spacing: 0
+        layer.enabled: true
 
-        active: Units.twelveHourClock
-        visible: active
-        asynchronous: true
+        StyledText {
+            id: hour
 
-        sourceComponent: StyledRect {
-            color: Colours.tPalette.m3surfaceContainerHigh
-            radius: Tokens.rounding.full
+            text: Time.hourStr
+            color: Colours.palette.m3onSurface
+            font: root.timeFont
+        }
 
-            implicitWidth: amPmText.implicitWidth + Tokens.padding.large * 2
-            implicitHeight: amPmText.implicitHeight + Tokens.padding.small * 2
+        StyledText {
+            id: colon
 
-            StyledText {
-                id: amPmText
+            text: ":"
+            color: Colours.palette.m3primary
+            font: root.timeFont
 
-                anchors.centerIn: parent
-                text: Time.amPmStr
-                color: Colours.palette.m3onSurface
-                font: Tokens.font.title.builders.large.scale(root.heroScale).weight(Font.DemiBold).build()
+            // Slow breathing instead of a hard blink
+            SequentialAnimation on opacity {
+                loops: Animation.Infinite
+                running: root.visible
+
+                NumberAnimation {
+                    to: 0.3
+                    duration: 1000
+                    easing.type: Easing.InOutSine
+                }
+                NumberAnimation {
+                    to: 1
+                    duration: 1000
+                    easing.type: Easing.InOutSine
+                }
             }
         }
+
+        StyledText {
+            text: Time.minuteStr
+            color: Colours.palette.m3onSurface
+            font: root.timeFont
+        }
+    }
+
+    // Accent tint that fades in towards the baseline, masked to the glyphs
+    Rectangle {
+        anchors.fill: timeRow
+
+        gradient: Gradient {
+            orientation: Gradient.Vertical
+
+            GradientStop {
+                position: 0.1
+                color: "transparent"
+            }
+            GradientStop {
+                position: 1
+                color: Qt.alpha(Colours.palette.m3primary, 0.75)
+            }
+        }
+
+        layer.enabled: true
+        layer.effect: Mask {
+            maskSource: timeRow
+        }
+    }
+
+    StyledText {
+        id: amPm
+
+        anchors.left: timeRow.right
+        anchors.leftMargin: Math.round(Tokens.spacing.medium * root.heroScale)
+        y: hour.baselineOffset - baselineOffset
+
+        visible: Units.twelveHourClock
+        text: Time.amPmStr
+        color: Colours.palette.m3primary
+        font: Tokens.font.clock.size(Math.max(1, Math.round(28 * root.heroScale))).weight(Font.Medium).build()
     }
 }

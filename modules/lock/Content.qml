@@ -1,12 +1,10 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
-import QtQuick.Layouts
+import QtQuick.Shapes
 import Caelestia
 import Caelestia.Config
-import qs.components
 import qs.services
-import qs.modules.lock.weather
 
 Item {
     id: root
@@ -16,87 +14,114 @@ Item {
     // 0 = fully off screen, 1 = in place. Driven by the lock surface's animations
     property real reveal: 1
 
-    readonly property bool portrait: height > width
-    readonly property int margin: Math.round(CUtils.clamp(height * 0.045, Tokens.padding.extraLarge, Tokens.padding.extraExtraLarge * 1.5))
-    readonly property real slide: (1 - reveal) * Tokens.padding.extraExtraLarge * 2
+    readonly property int margin: Math.round(CUtils.clamp(height * 0.04, Tokens.padding.extraLarge, Tokens.padding.extraExtraLarge))
+    readonly property real slide: (1 - reveal) * Tokens.padding.extraExtraLarge
 
     // Scale of the clock and login row, ~1 on a 1080p landscape screen
-    readonly property real heroScale: Math.min(leftPane.height / 1000, leftPane.width / 640)
+    readonly property real heroScale: CUtils.clamp(Math.min(height / 1080, width / 1100), 0.5, 2)
 
-    Item {
-        id: leftPane
+    // Ambient accent glow pooled behind the clock
+    Shape {
+        id: glow
 
-        anchors.left: parent.left
-        anchors.top: parent.top
-        anchors.margins: root.margin
-        anchors.leftMargin: root.margin - root.slide
+        anchors.centerIn: hero
+        // Pooled around the clock rather than the whole hero
+        anchors.verticalCenterOffset: -hero.height * 0.3
+        width: Math.min(parent.width, hero.width * 1.7)
+        height: width
+        preferredRendererType: Shape.CurveRenderer
+        opacity: root.reveal
 
-        width: parent.width - root.margin * 2 - (root.portrait ? 0 : rail.width + root.margin)
-        height: root.portrait ? Math.round((parent.height - root.margin * 3) * 0.6) : parent.height - root.margin * 2
+        ShapePath {
+            strokeWidth: 0
+            fillGradient: RadialGradient {
+                centerX: glow.width / 2
+                centerY: glow.height / 2
+                focalX: centerX
+                focalY: centerY
+                centerRadius: glow.width / 2
 
-        WeatherInfo {
-            anchors.left: parent.left
-            anchors.top: parent.top
-            width: Math.min(parent.width, implicitWidth)
-        }
+                GradientStop {
+                    position: 0
+                    color: Qt.alpha(Colours.palette.m3primary, 0.12)
+                }
+                GradientStop {
+                    position: 0.45
+                    color: Qt.alpha(Colours.palette.m3primary, 0.04)
+                }
+                GradientStop {
+                    position: 1
+                    color: "transparent"
+                }
+            }
 
-        Hero {
-            anchors.left: parent.left
-            anchors.bottom: parent.bottom
-            width: Math.min(parent.width, Tokens.sizes.lock.centerWidth)
-
-            lock: root.lock
-            heroScale: root.heroScale
+            PathRectangle {
+                width: glow.width
+                height: glow.height
+            }
         }
     }
 
-    ColumnLayout {
-        id: rail
+    Hero {
+        id: hero
 
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.verticalCenter: parent.verticalCenter
+        // Sits a touch above centre and rises into place while revealing
+        anchors.verticalCenterOffset: Math.round(-parent.height * 0.06 + root.slide)
+
+        width: Math.min(parent.width - root.margin * 2, Tokens.sizes.lock.centerWidth * Math.max(1, root.heroScale))
+
+        lock: root.lock
+        heroScale: root.heroScale
+    }
+
+    WeatherInfo {
+        anchors.left: parent.left
+        anchors.bottom: parent.bottom
+        anchors.margins: root.margin
+        anchors.bottomMargin: root.margin - root.slide
+
+        width: Math.min(implicitWidth, parent.width * 0.3)
+        // Drop the hourly strip on short screens so the card stays a footnote
+        showHourly: parent.height >= 800
+    }
+
+    Media {
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         anchors.margins: root.margin
-        anchors.rightMargin: root.margin - root.slide
+        anchors.bottomMargin: root.margin - root.slide
 
-        width: root.portrait ? parent.width - root.margin * 2 : Math.min(Tokens.sizes.sidebar.width, Math.round(parent.width * 0.32))
-        height: parent.height - root.margin * 2 - (root.portrait ? leftPane.height + root.margin : 0)
+        width: Math.min(implicitWidth, parent.width * 0.3)
+        visible: Players.active !== null
+    }
 
-        spacing: Tokens.spacing.medium
+    NotifDock {
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: root.margin - root.slide
 
-        Forecast {
-            Layout.fillWidth: true
+        width: Math.min(Tokens.sizes.notifs.width, parent.width - root.margin * 2)
+        // Room left between the login row and the bottom edge
+        maxHeight: parent.height - root.margin - (hero.y + hero.height)
 
-            // Only when the rest of the rail keeps enough height for itself
-            visible: rail.height - implicitHeight - rail.spacing >= Tokens.sizes.lock.showForecastHeight
-        }
+        lock: root.lock
+    }
 
-        StyledRect {
-            Layout.fillWidth: true
-            Layout.fillHeight: true
+    StatusCluster {
+        anchors.left: parent.left
+        anchors.top: parent.top
+        anchors.margins: root.margin
+        anchors.topMargin: root.margin - root.slide
+    }
 
-            radius: Tokens.rounding.extraLarge
-            color: Colours.tPalette.m3surfaceContainer
+    SessionControls {
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.margins: root.margin
+        anchors.topMargin: root.margin - root.slide
 
-            NotifDock {
-                lock: root.lock
-            }
-        }
-
-        Media {
-            Layout.fillWidth: true
-            visible: Players.active !== null
-        }
-
-        Fetch {
-            Layout.fillWidth: true
-
-            // Leave the room to the notifications on short screens
-            compact: fullHeight > rail.height / 3
-        }
-
-        SessionControls {
-            Layout.fillWidth: true
-            visible: GlobalConfig.lock.enableSessionControls
-        }
+        visible: GlobalConfig.lock.enableSessionControls
     }
 }

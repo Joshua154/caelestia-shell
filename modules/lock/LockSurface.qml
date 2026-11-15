@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Effects
+import QtQuick.Shapes
 import Quickshell.Wayland
 import M3Shapes
 import Caelestia.Config
@@ -173,20 +174,53 @@ WlSessionLockSurface {
             }
         }
 
-        // Scrim so the content stays legible on any wallpaper, heavier behind the clock
+        // Scrim so the content stays legible on any wallpaper, heavier towards the bottom
         Rectangle {
             anchors.fill: parent
 
             gradient: Gradient {
-                orientation: Gradient.Horizontal
+                orientation: Gradient.Vertical
 
                 GradientStop {
                     position: 0
-                    color: Qt.alpha(Colours.palette.m3surface, 0.8)
+                    color: Qt.alpha(Colours.palette.m3surface, 0.35)
                 }
                 GradientStop {
                     position: 1
-                    color: Qt.alpha(Colours.palette.m3surface, 0.5)
+                    color: Qt.alpha(Colours.palette.m3surface, 0.65)
+                }
+            }
+        }
+
+        // Vignette: keeps the eye on the centre and frames the corner widgets
+        Shape {
+            id: vignette
+
+            anchors.fill: parent
+            preferredRendererType: Shape.CurveRenderer
+
+            ShapePath {
+                strokeWidth: 0
+                fillGradient: RadialGradient {
+                    centerX: vignette.width / 2
+                    centerY: vignette.height / 2
+                    focalX: centerX
+                    focalY: centerY
+                    centerRadius: Math.max(vignette.width, vignette.height) * 0.72
+
+                    GradientStop {
+                        position: 0.35
+                        color: "transparent"
+                    }
+                    GradientStop {
+                        position: 1
+                        color: Qt.alpha(Colours.palette.m3surface, 0.55)
+                    }
+                }
+
+                PathRectangle {
+                    width: vignette.width
+                    height: vignette.height
                 }
             }
         }
